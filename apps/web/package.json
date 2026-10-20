@@ -1,0 +1,32 @@
+{
+  "name": "@cwad/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "start": "vite preview --host 0.0.0.0",
+    "lint": "eslint .",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@cwad/types": "*",
+    "@cwad/ui": "*",
+    "@cwad/validation": "*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^6.0.0",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2",
+    "vite": "8.3.0",
+    "vitest": "^3.2.4"
+  }
+}
