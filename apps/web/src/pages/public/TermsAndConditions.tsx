@@ -77,7 +77,7 @@ export default function TermsAndConditions() {
               5. Financial Information Disclaimer
             </h2>
             <p className="mt-2">
-              CWAD Expense is intended for recordkeeping and budgeting.
+              CWAD Expense is intended for record keeping and budgeting.
               It does not provide financial, investment, tax, or legal advice.
               You are responsible for checking the accuracy of the information
               you enter and for decisions made using that information.

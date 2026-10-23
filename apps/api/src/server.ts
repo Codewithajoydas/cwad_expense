@@ -1,9 +1,11 @@
-import { app } from "./app.js";
+import {createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 
-const server = app.listen(env.PORT, () => {
-  logger.info(`API listening on http://localhost:${env.PORT}`);
+const server = await  createApp()
+
+server.listen(env.PORT, () => {
+  logger.info(`Server is running on http://localhost:${env.PORT}`);
 });
 
 function shutdown(signal: string) {

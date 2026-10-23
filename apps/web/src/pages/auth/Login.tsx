@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   Eye,
   EyeOff,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import logo from "@/assets/images/cwad-expense-logo.png";
+import { authClient } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +17,74 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 
 export default function Login() {
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const { error: signInError } =
+        await authClient.signIn.email({
+          email: email.trim(),
+          password,
+          rememberMe,
+          callbackURL: "/",
+        });
+
+      if (signInError) {
+        const errorCode = signInError.code?.toUpperCase();
+        const errorMessage =
+          signInError.message?.toLowerCase() ?? "";
+
+        const emailNotVerified =
+          errorCode === "EMAIL_NOT_VERIFIED" ||
+          (signInError.status === 403 &&
+            errorMessage.includes("email") &&
+            errorMessage.includes("verif"));
+
+        if (emailNotVerified) {
+          navigate(
+            `/verify-email?email=${encodeURIComponent(email.trim())}`,
+            {
+              replace: true,
+              state: { email: email.trim() },
+            },
+          );
+
+          return;
+        }
+
+        setError(
+          signInError.message ||
+            "Unable to sign in. Please try again.",
+        );
+
+        return;
+      }
+
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-2">
@@ -36,6 +103,7 @@ export default function Login() {
               <p className="text-sm font-semibold tracking-tight">
                 CWAD Expense
               </p>
+
               <p className="text-xs text-muted-foreground">
                 Personal finance manager
               </p>
@@ -62,10 +130,7 @@ export default function Login() {
 
             <form
               className="space-y-5"
-              onSubmit={(event) => {
-                event.preventDefault();
-                // Connect your login API here.
-              }}
+              onSubmit={handleSubmit}
             >
               {/* Email */}
               <div className="space-y-2">
@@ -82,6 +147,10 @@ export default function Login() {
                   type="email"
                   placeholder="you@example.com"
                   autoComplete="email"
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
                   required
                 />
               </div>
@@ -112,6 +181,10 @@ export default function Login() {
                     placeholder="Enter your password"
                     autoComplete="current-password"
                     className="pr-10"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
                     required
                   />
 
@@ -154,18 +227,37 @@ export default function Login() {
                 </label>
               </div>
 
+              {/* Error */}
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                >
+                  {error}
+                </p>
+              )}
+
               {/* Submit */}
-              <Button type="submit" className="w-full">
-                Sign in
-                <ArrowRight className="ml-2 size-4" />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading}
+              >
+                {loading ? "Signing in..." : "Sign in"}
+
+                {!loading && (
+                  <ArrowRight className="ml-2 size-4" />
+                )}
               </Button>
             </form>
 
             <div className="my-6 flex items-center gap-4">
               <Separator className="flex-1" />
+
               <span className="text-xs text-muted-foreground">
                 SECURE ACCESS
               </span>
+
               <Separator className="flex-1" />
             </div>
 
@@ -187,7 +279,7 @@ export default function Login() {
         </footer>
       </section>
 
-      {/* Right: Unsplash Image */}
+      {/* Right: Background Image */}
       <section className="relative hidden overflow-hidden bg-muted lg:block">
         <img
           src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1600&q=85"

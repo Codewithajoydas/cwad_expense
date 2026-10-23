@@ -6,6 +6,9 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ORIGIN: z.string().url().default("http://localhost:5173"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  MONGODB_URI: z.string().url(),
+  EMAIL: z.string().email(),
+  EMAIL_PASSWORD: z.string(),
 });
 
 export const env = envSchema.parse(process.env);

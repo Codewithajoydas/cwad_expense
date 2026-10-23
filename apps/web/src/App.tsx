@@ -32,7 +32,7 @@ import Notifications from "./pages/private/Notifications";
 
 // Public pages
 import Login from "./pages/auth/Login";
-import Signup from "./pages/auth/signup";
+import Signup from "./pages/auth/Signup";
 import ForgotPassword from "./pages/auth/forgot-password";
 import VerifyEmail from "./pages/auth/Verify-email";
 import VerifyOtp from "./pages/auth/verify-otp";

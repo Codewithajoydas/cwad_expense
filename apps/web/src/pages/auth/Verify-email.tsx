@@ -1,56 +1,82 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Mail, CheckCircle2, ArrowLeft, RefreshCw } from "lucide-react";
+import {
+  Mail,
+  CheckCircle2,
+  ArrowLeft,
+  RefreshCw,
+} from "lucide-react";
 
+import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
 
   const email = searchParams.get("email") || "";
-  const token = searchParams.get("token");
+  const verificationComplete = searchParams.get("verified") === "1";
+  const verificationError = searchParams.get("error");
 
   const [isResending, setIsResending] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [isVerified, setIsVerified] = useState(false);
+  const [isVerified, setIsVerified] = useState(verificationComplete);
+
+  useEffect(() => {
+    if (verificationComplete) {
+      setIsVerified(true);
+      setMessage("Your email has been verified successfully.");
+      setError("");
+    } else if (verificationError) {
+      setError(
+        verificationError === "invalid_token"
+          ? "This verification link is invalid. Request a new email to try again."
+          : verificationError === "token_expired"
+            ? "This verification link has expired. Request a new one."
+            : "Email verification failed. Please try again or request a new link.",
+      );
+    }
+  }, [verificationComplete, verificationError]);
 
   const handleResendEmail = async () => {
-    setError("");
-    setMessage("");
-    setIsResending(true);
+    const normalizedEmail = email.trim();
 
-    try {
-      // TODO: Connect your backend resend-verification API.
-      // Example:
-      // await api.post("/auth/resend-verification", { email });
-
-      setError("Email verification API is not connected yet.");
-    } catch {
-      setError("Unable to resend the verification email. Please try again.");
-    } finally {
-      setIsResending(false);
-    }
-  };
-
-  const handleVerifyEmail = async () => {
-    if (!token) {
-      setError("The verification link is missing or invalid.");
+    if (!normalizedEmail) {
+      setError("Please return to login and enter your email address first.");
       return;
     }
 
     setError("");
     setMessage("");
+    setIsResending(true);
 
     try {
-      // TODO: Connect your backend verification API.
-      // Example:
-      // await api.post("/auth/verify-email", { token });
+      const { error: resendError } =
+        await authClient.sendVerificationEmail({
+          email: normalizedEmail,
+          callbackURL: `${window.location.origin}/verify-email?verified=1`,
+        });
 
-      setError("Email verification API is not connected yet.");
-    } catch {
-      setError("Verification failed. The link may have expired.");
+      if (resendError) {
+        setError(
+          resendError.message ||
+            "Unable to resend the verification email. Please try again.",
+        );
+        return;
+      }
+
+      setMessage(
+        "If this account needs verification, a verification email has been requested. Check your inbox and spam folder.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to resend the verification email. Please try again.",
+      );
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -84,7 +110,16 @@ export default function VerifyEmail() {
               sign in to your CWAD Expense account.
             </p>
 
-            <Button  className="mt-6 w-full">
+            {message && (
+              <p
+                role="status"
+                className="mt-4 text-sm text-green-600"
+              >
+                {message}
+              </p>
+            )}
+
+            <Button asChild className="mt-6 w-full">
               <Link to="/login">Continue to login</Link>
             </Button>
           </>
@@ -95,15 +130,16 @@ export default function VerifyEmail() {
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              We need to verify your email address before you can
-              continue using your CWAD Expense account.
+              Verify your email address before signing in to your
+              CWAD Expense account.
             </p>
 
             {email ? (
               <div className="mt-5 rounded-md border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground">
-                  Verification email sent to
+                  Verification email requested for
                 </p>
+
                 <p className="mt-1 break-all text-sm font-medium">
                   {email}
                 </p>
@@ -111,28 +147,25 @@ export default function VerifyEmail() {
             ) : (
               <p className="mt-5 text-sm text-muted-foreground">
                 Open the verification link sent to your registered email
-                address.
+                address. If you need another email, return to login and
+                enter your email address first.
               </p>
             )}
 
-            {token && (
-              <Button
-                type="button"
-                className="mt-5 w-full"
-                onClick={handleVerifyEmail}
-              >
-                Verify email address
-              </Button>
-            )}
-
             {message && (
-              <p role="status" className="mt-4 text-sm text-green-600">
+              <p
+                role="status"
+                className="mt-4 rounded-md border border-green-600/20 bg-green-600/5 px-3 py-2 text-sm text-green-700"
+              >
                 {message}
               </p>
             )}
 
             {error && (
-              <p role="alert" className="mt-4 text-sm text-destructive">
+              <p
+                role="alert"
+                className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
                 {error}
               </p>
             )}
@@ -150,9 +183,14 @@ export default function VerifyEmail() {
                 disabled={isResending || !email}
               >
                 <RefreshCw
-                  className={`mr-2 size-4 ${isResending ? "animate-spin" : ""}`}
+                  className={`mr-2 size-4 ${
+                    isResending ? "animate-spin" : ""
+                  }`}
                 />
-                {isResending ? "Sending..." : "Resend verification email"}
+
+                {isResending
+                  ? "Sending..."
+                  : "Resend verification email"}
               </Button>
             </div>
           </>

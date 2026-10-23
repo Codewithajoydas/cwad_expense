@@ -1,6 +1,6 @@
 
-import { useState } from "react";
-import { Link } from "react-router";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router";
 import {
   Eye,
   EyeOff,
@@ -12,16 +12,76 @@ import {
 
 import logo from "@/assets/images/cwad-expense-logo.png";
 
+import { authClient } from "../../lib/auth-client";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 
 export default function Signup() {
+  const navigate = useNavigate();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
+
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError("Please accept the Terms of Service.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const normalizedEmail = email.trim();
+      const { error: signupError } =
+        await authClient.signUp.email({
+          name: name.trim(),
+          email: normalizedEmail,
+          password,
+          callbackURL: `${window.location.origin}/verify-email?verified=1`,
+        });
+
+      if (signupError) {
+        setError(
+          signupError.message || "Unable to create your account.",
+        );
+        return;
+      }
+
+      navigate(
+        `/verify-email?email=${encodeURIComponent(normalizedEmail)}`,
+        { replace: true },
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-2">
@@ -67,10 +127,7 @@ export default function Signup() {
 
             <form
               className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                // Connect your signup API here.
-              }}
+              onSubmit={handleSubmit}
             >
               {/* Full Name */}
               <div className="space-y-2">
@@ -83,10 +140,14 @@ export default function Signup() {
 
                 <Input
                   id="fullName"
-                  name="fullName"
+                  name="name"
                   type="text"
                   placeholder="Enter your full name"
                   autoComplete="name"
+                  value={name}
+                  onChange={(event) =>
+                    setName(event.target.value)
+                  }
                   required
                 />
               </div>
@@ -106,6 +167,10 @@ export default function Signup() {
                   type="email"
                   placeholder="you@example.com"
                   autoComplete="email"
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
                   required
                 />
               </div>
@@ -128,13 +193,19 @@ export default function Signup() {
                     autoComplete="new-password"
                     minLength={8}
                     className="pr-10"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
                     required
                   />
 
                   <button
                     type="button"
                     aria-label={
-                      showPassword ? "Hide password" : "Show password"
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
                     }
                     onClick={() =>
                       setShowPassword((current) => !current)
@@ -174,6 +245,10 @@ export default function Signup() {
                     autoComplete="new-password"
                     minLength={8}
                     className="pr-10"
+                    value={confirmPassword}
+                    onChange={(event) =>
+                      setConfirmPassword(event.target.value)
+                    }
                     required
                   />
 
@@ -185,7 +260,9 @@ export default function Signup() {
                         : "Show confirm password"
                     }
                     onClick={() =>
-                      setShowConfirmPassword((current) => !current)
+                      setShowConfirmPassword(
+                        (current) => !current,
+                      )
                     }
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
@@ -207,7 +284,6 @@ export default function Signup() {
                     setAcceptedTerms(checked === true)
                   }
                   className="mt-0.5"
-                  required
                 />
 
                 <label
@@ -232,22 +308,37 @@ export default function Signup() {
                 </label>
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                >
+                  {error}
+                </p>
+              )}
+
               {/* Submit */}
               <Button
                 type="submit"
                 className="w-full"
-                disabled={!acceptedTerms}
+                disabled={loading || !acceptedTerms}
               >
-                Create account
-                <ArrowRight className="ml-2 size-4" />
+                {loading ? "Creating account..." : "Create account"}
+
+                {!loading && (
+                  <ArrowRight className="ml-2 size-4" />
+                )}
               </Button>
             </form>
 
             <div className="my-5 flex items-center gap-4">
               <Separator className="flex-1" />
+
               <span className="text-xs text-muted-foreground">
                 ALREADY REGISTERED?
               </span>
+
               <Separator className="flex-1" />
             </div>
 
@@ -265,11 +356,12 @@ export default function Signup() {
 
         {/* Footer */}
         <footer className="px-6 py-5 text-center text-xs text-muted-foreground sm:px-10">
-          © {new Date().getFullYear()} CWAD Expense. All rights reserved.
+          © {new Date().getFullYear()} CWAD Expense. All rights
+          reserved.
         </footer>
       </section>
 
-      {/* Right: Unsplash Background */}
+      {/* Right: Background */}
       <section className="relative hidden overflow-hidden bg-muted lg:block">
         <img
           src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1600&q=85"

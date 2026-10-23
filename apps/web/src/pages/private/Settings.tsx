@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   UserRound,
   SlidersHorizontal,
@@ -11,7 +10,15 @@ import {
   Download,
   Save,
   RotateCcw,
+  LoaderCircle,
+  CheckCircle2,
+  CircleAlert,
+  Mail,
+  CalendarDays,
+  Copy,
 } from "lucide-react";
+
+import { authClient } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +47,6 @@ const sections = [
 
 const initialSettings = {
   name: "",
-  email: "",
   monthlyBudget: "20000",
   weekStartsOn: "Monday",
   dateFormat: "DD/MM/YYYY",
@@ -55,12 +61,75 @@ const initialSettings = {
   twoFactorAuth: false,
 };
 
+const notificationOptions = [
+  {
+    key: "expenseAlerts",
+    label: "Expense notifications",
+    description: "Get notified when expenses are recorded.",
+  },
+  {
+    key: "budgetAlerts",
+    label: "Budget alerts",
+    description: "Get notified when approaching your budget.",
+  },
+  {
+    key: "incomeAlerts",
+    label: "Income notifications",
+    description: "Get notified when income is recorded.",
+  },
+  {
+    key: "weeklySummary",
+    label: "Weekly summary",
+    description: "Receive a weekly overview of your finances.",
+  },
+  {
+    key: "emailNotifications",
+    label: "Email notifications",
+    description: "Allow financial updates by email.",
+  },
+] as const;
+
+type NotificationKey = (typeof notificationOptions)[number]["key"];
+
 export default function SettingsPage() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>("profile");
 
   const [settings, setSettings] = useState(initialSettings);
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const { data: session, isPending } = authClient.useSession();
+
+  const user = session?.user;
+
+  // Populate the profile form with the authenticated user's information.
+  useEffect(() => {
+    if (user) {
+      setSettings((current) => ({
+        ...current,
+        name: user.name || "",
+      }));
+    }
+  }, [user?.id, user?.name]);
+
+  const userName = user?.name?.trim() || "User";
+  const userEmail = user?.email || "";
+  const userImage = user?.image;
+
+  const initials =
+    userName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "U";
+
+  const activeLabel =
+    sections.find((section) => section.id === activeSection)?.label ??
+    "Settings";
 
   function updateSetting<K extends keyof typeof initialSettings>(
     key: K,
@@ -68,25 +137,100 @@ export default function SettingsPage() {
   ) {
     setSettings((current) => ({ ...current, [key]: value }));
     setSaved(false);
+    setSaveError("");
   }
 
-  function handleSave() {
-    // Frontend demo: replace with an API request when the backend is ready.
-    setSaved(true);
+  async function handleSave() {
+    setSaved(false);
+    setSaveError("");
+    setIsSaving(true);
+
+    try {
+      if (activeSection === "profile") {
+        if (!user) {
+          setSaveError("Please sign in to update your profile.");
+          return;
+        }
+
+        const name = settings.name.trim();
+
+        if (!name) {
+          setSaveError("Name cannot be empty.");
+          return;
+        }
+
+        const { error } = await authClient.updateUser({ name });
+
+        if (error) {
+          setSaveError(error.message || "Unable to update your profile.");
+          return;
+        }
+
+        setSaved(true);
+        return;
+      }
+
+      // Other preferences are currently stored in component state only.
+      // Connect them to your backend or persistent storage to save them.
+      setSaved(true);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while saving.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function handleReset() {
-    setSettings(initialSettings);
+    setSettings((current) => ({
+      ...initialSettings,
+      name: user?.name || "",
+      // Keep the other preferences at their initial defaults.
+      monthlyBudget: initialSettings.monthlyBudget,
+      weekStartsOn: initialSettings.weekStartsOn,
+      dateFormat: initialSettings.dateFormat,
+      theme: initialSettings.theme,
+      currency: initialSettings.currency,
+      language: initialSettings.language,
+      expenseAlerts: initialSettings.expenseAlerts,
+      budgetAlerts: initialSettings.budgetAlerts,
+      incomeAlerts: initialSettings.incomeAlerts,
+      weeklySummary: initialSettings.weeklySummary,
+      emailNotifications: initialSettings.emailNotifications,
+      twoFactorAuth: current.twoFactorAuth,
+    }));
+
     setSaved(false);
+    setSaveError("");
   }
 
-  const activeLabel =
-    sections.find((section) => section.id === activeSection)?.label ??
-    "Settings";
+  async function handleCopyUserId() {
+    if (!user?.id) return;
+
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setSaveError("Unable to copy the account ID.");
+    }
+  }
+
+  function handleExport() {
+    window.alert(
+      "Connect your transaction data to enable financial data export.",
+    );
+  }
 
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {/* Page heading */}
+   
+
         <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
           {/* Settings navigation */}
           <aside>
@@ -95,7 +239,11 @@ export default function SettingsPage() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setActiveSection(id)}
+                  onClick={() => {
+                    setActiveSection(id);
+                    setSaved(false);
+                    setSaveError("");
+                  }}
                   className={[
                     "flex shrink-0 items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
                     activeSection === id
@@ -121,53 +269,179 @@ export default function SettingsPage() {
 
             {/* Profile */}
             {activeSection === "profile" && (
-              <div className="rounded-lg border bg-background">
-                <div className="p-5">
-                  <h3 className="font-medium">Personal information</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Your basic account details.
-                  </p>
-
-                  <div className="mt-6 grid gap-5 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full name</Label>
-                      <Input
-                        id="name"
-                        placeholder="Enter your name"
-                        value={settings.name}
-                        onChange={(e) =>
-                          updateSetting("name", e.target.value)
-                        }
-                      />
+              <div className="space-y-5">
+                {/* Authenticated user summary */}
+                <div className="rounded-lg border bg-background">
+                  <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+                    <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-lg font-semibold">
+                      {isPending ? (
+                        <LoaderCircle className="size-6 animate-spin text-muted-foreground" />
+                      ) : userImage ? (
+                        <img
+                          src={userImage}
+                          alt={userName}
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        initials
+                      )}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email address</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="you@example.com"
-                        value={settings.email}
-                        onChange={(e) =>
-                          updateSetting("email", e.target.value)
-                        }
-                      />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-lg font-semibold">
+                        {isPending ? "Loading account..." : userName}
+                      </h3>
+
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
+                        {userEmail || "No email available"}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {user?.emailVerified ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium">
+                            <CheckCircle2 className="size-3.5 text-green-600" />
+                            Email verified
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium text-muted-foreground">
+                            <Mail className="size-3.5" />
+                            Email not verified
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="grid gap-4 p-5 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Account ID
+                      </p>
+
+                      <div className="mt-1 flex min-w-0 items-center gap-2">
+                        <p
+                          className="truncate text-sm font-medium"
+                          title={user?.id}
+                        >
+                          {isPending
+                            ? "Loading..."
+                            : user?.id || "Not signed in"}
+                        </p>
+
+                        {user?.id && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 shrink-0"
+                            onClick={handleCopyUserId}
+                            aria-label="Copy account ID"
+                          >
+                            {copied ? (
+                              <CheckCircle2 className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Account created
+                      </p>
+
+                      <p className="mt-1 flex items-center gap-2 text-sm font-medium">
+                        <CalendarDays className="size-4 text-muted-foreground" />
+
+                        {user?.createdAt
+                          ? new Date(user.createdAt).toLocaleDateString(
+                              "en-IN",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )
+                          : isPending
+                            ? "Loading..."
+                            : "Not available"}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                <Separator />
-
-                <div className="flex items-center justify-between gap-4 p-5">
-                  <div>
-                    <p className="text-sm font-medium">Account status</p>
+                {/* Editable profile information */}
+                <div className="rounded-lg border bg-background">
+                  <div className="p-5">
+                    <h3 className="font-medium">Personal information</h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Your account is currently managed locally.
+                      Update the name associated with your account.
                     </p>
+
+                    {isPending ? (
+                      <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+                        <LoaderCircle className="size-4 animate-spin" />
+                        Loading your account details...
+                      </div>
+                    ) : (
+                      <div className="mt-6 space-y-5">
+                        <div className="space-y-2">
+                          <Label htmlFor="name">Full name</Label>
+                          <Input
+                            id="name"
+                            placeholder="Enter your name"
+                            value={settings.name}
+                            onChange={(event) =>
+                              updateSetting("name", event.target.value)
+                            }
+                            maxLength={100}
+                            autoComplete="name"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email address</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={userEmail}
+                            readOnly
+                            disabled
+                            autoComplete="email"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Email is managed by your authentication account.
+                            Changing it requires a separate email-change flow.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <span className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground">
-                    Demo
-                  </span>
+
+                  <Separator />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+                    <p className="text-sm text-muted-foreground">
+                      Profile changes are saved to your account.
+                    </p>
+
+                    <Button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={isPending || isSaving || !user}
+                    >
+                      {isSaving ? (
+                        <LoaderCircle className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 size-4" />
+                      )}
+                      {isSaving ? "Saving..." : "Save profile"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -191,21 +465,19 @@ export default function SettingsPage() {
                         type="number"
                         min="0"
                         value={settings.monthlyBudget}
-                        onChange={(e) =>
-                          updateSetting("monthlyBudget", e.target.value)
+                        onChange={(event) =>
+                          updateSetting("monthlyBudget", event.target.value)
                         }
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="weekStartsOn">
-                        Week starts on
-                      </Label>
+                      <Label htmlFor="weekStartsOn">Week starts on</Label>
                       <select
                         id="weekStartsOn"
                         value={settings.weekStartsOn}
-                        onChange={(e) =>
-                          updateSetting("weekStartsOn", e.target.value)
+                        onChange={(event) =>
+                          updateSetting("weekStartsOn", event.target.value)
                         }
                         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
@@ -220,8 +492,8 @@ export default function SettingsPage() {
                       <select
                         id="dateFormat"
                         value={settings.dateFormat}
-                        onChange={(e) =>
-                          updateSetting("dateFormat", e.target.value)
+                        onChange={(event) =>
+                          updateSetting("dateFormat", event.target.value)
                         }
                         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
@@ -285,8 +557,8 @@ export default function SettingsPage() {
                 </div>
 
                 <p className="mt-4 text-xs text-muted-foreground">
-                  Theme selection is a UI preference only; connect it to your
-                  app's theme provider to apply it globally.
+                  Theme selection is a UI preference. Connect it to your
+                  application theme provider to apply it globally.
                 </p>
               </div>
             )}
@@ -305,8 +577,8 @@ export default function SettingsPage() {
                     <select
                       id="currency"
                       value={settings.currency}
-                      onChange={(e) =>
-                        updateSetting("currency", e.target.value)
+                      onChange={(event) =>
+                        updateSetting("currency", event.target.value)
                       }
                       className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
@@ -322,8 +594,8 @@ export default function SettingsPage() {
                     <select
                       id="language"
                       value={settings.language}
-                      onChange={(e) =>
-                        updateSetting("language", e.target.value)
+                      onChange={(event) =>
+                        updateSetting("language", event.target.value)
                       }
                       className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
@@ -345,43 +617,12 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                {[
-                  {
-                    key: "expenseAlerts",
-                    label: "Expense notifications",
-                    description: "Get notified when expenses are recorded.",
-                  },
-                  {
-                    key: "budgetAlerts",
-                    label: "Budget alerts",
-                    description: "Get notified when approaching your budget.",
-                  },
-                  {
-                    key: "incomeAlerts",
-                    label: "Income notifications",
-                    description: "Get notified when income is recorded.",
-                  },
-                  {
-                    key: "weeklySummary",
-                    label: "Weekly summary",
-                    description: "Receive a weekly overview of your finances.",
-                  },
-                  {
-                    key: "emailNotifications",
-                    label: "Email notifications",
-                    description: "Allow financial updates by email.",
-                  },
-                ].map((item) => {
-                  const key = item.key as
-                    | "expenseAlerts"
-                    | "budgetAlerts"
-                    | "incomeAlerts"
-                    | "weeklySummary"
-                    | "emailNotifications";
+                {notificationOptions.map((item) => {
+                  const key: NotificationKey = item.key;
 
                   return (
                     <div
-                      key={item.key}
+                      key={key}
                       className="flex items-center justify-between gap-4 p-5"
                     >
                       <div>
@@ -390,6 +631,7 @@ export default function SettingsPage() {
                           {item.description}
                         </p>
                       </div>
+
                       <Switch
                         checked={settings[key]}
                         onCheckedChange={(checked) =>
@@ -424,6 +666,7 @@ export default function SettingsPage() {
                       Add an extra verification step to sign-in.
                     </p>
                   </div>
+
                   <Switch
                     checked={settings.twoFactorAuth}
                     onCheckedChange={(checked) =>
@@ -438,9 +681,9 @@ export default function SettingsPage() {
                 <div className="p-5">
                   <p className="text-sm font-medium">Password</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Password changes require a configured authentication
-                    backend.
+                    Password changes require a configured authentication flow.
                   </p>
+
                   <Button
                     className="mt-4"
                     variant="outline"
@@ -451,8 +694,8 @@ export default function SettingsPage() {
                 </div>
 
                 <p className="px-5 pb-5 text-xs text-muted-foreground">
-                  Security controls are visual preferences until connected
-                  to your authentication system.
+                  The two-factor switch is currently a UI preference. It does
+                  not enable server-side two-factor authentication.
                 </p>
               </div>
             )}
@@ -463,17 +706,13 @@ export default function SettingsPage() {
                 <div className="rounded-lg border bg-background p-5">
                   <h3 className="font-medium">Export your data</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Download a copy of your transactions and financial
-                    records.
+                    Download a copy of your transactions and financial records.
                   </p>
+
                   <Button
                     variant="outline"
                     className="mt-4"
-                    onClick={() =>
-                      window.alert(
-                        "Connect your transaction data to enable export.",
-                      )
-                    }
+                    onClick={handleExport}
                   >
                     <Download className="mr-2 size-4" />
                     Export data
@@ -485,6 +724,7 @@ export default function SettingsPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     Restore the settings form to its initial values.
                   </p>
+
                   <Button
                     variant="outline"
                     className="mt-4"
@@ -497,20 +737,57 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Save actions */}
+            {/* Save status and errors */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-              <p className="text-sm text-muted-foreground" aria-live="polite">
-                {saved ? "Changes saved in the current session." : ""}
-              </p>
+              <div className="min-w-0 flex-1">
+                {saved && (
+                  <p
+                    className="flex items-center gap-2 text-sm text-green-700"
+                    aria-live="polite"
+                  >
+                    <CheckCircle2 className="size-4 shrink-0" />
+                    {activeSection === "profile"
+                      ? "Profile updated successfully."
+                      : "Changes saved in the current session."}
+                  </p>
+                )}
 
-              <Button variant="outline" onClick={handleReset}>
-                Reset
-              </Button>
+                {saveError && (
+                  <p
+                    role="alert"
+                    className="flex items-center gap-2 text-sm text-destructive"
+                  >
+                    <CircleAlert className="size-4 shrink-0" />
+                    {saveError}
+                  </p>
+                )}
+              </div>
 
-              <Button onClick={handleSave}>
-                <Save className="mr-2 size-4" />
-                Save changes
-              </Button>
+              {activeSection !== "profile" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={isSaving}
+                >
+                  Reset
+                </Button>
+              )}
+
+              {activeSection !== "profile" && (
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <LoaderCircle className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 size-4" />
+                  )}
+                  {isSaving ? "Saving..." : "Save changes"}
+                </Button>
+              )}
             </div>
           </section>
         </div>
