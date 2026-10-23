@@ -14,7 +14,6 @@ import Sidebar from "./components/layout/Sidebar";
 import Header from "./components/layout/Header";
 
 // Private pages
-import Home from "./pages/private/Home";
 import Dashboard from "./pages/private/Dashboard";
 import CreateExpense from "./pages/private/Create-expense";
 import Transactions from "./pages/private/Transactions";
