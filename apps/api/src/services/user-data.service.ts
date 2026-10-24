@@ -2,12 +2,7 @@ import mongoose from "mongoose";
 import UserData from "../model/user-data.model.js";
 
 export type UserDataResource =
-  | "budgets"
-  | "goals"
-  | "debts"
-  | "recurring"
-  | "notifications"
-  | "preferences";
+  "budgets" | "goals" | "debts" | "recurring" | "notifications" | "preferences";
 
 type DataRecord = Record<string, unknown>;
 
@@ -16,14 +11,32 @@ const fields: Record<UserDataResource, readonly string[]> = {
   goals: ["name", "category", "target", "saved", "targetDate", "description"],
   debts: ["person", "type", "amount", "paid", "date", "dueDate", "note"],
   recurring: [
-    "title", "category", "type", "amount", "account", "frequency",
-    "startDate", "nextDate", "endDate", "status", "note",
+    "title",
+    "category",
+    "type",
+    "amount",
+    "account",
+    "frequency",
+    "startDate",
+    "nextDate",
+    "endDate",
+    "status",
+    "note",
   ],
   notifications: ["title", "description", "time", "type", "read"],
   preferences: [
-    "monthlyBudget", "weekStartsOn", "dateFormat", "theme", "currency",
-    "language", "expenseAlerts", "budgetAlerts", "incomeAlerts",
-    "weeklySummary", "emailNotifications", "twoFactorAuth",
+    "monthlyBudget",
+    "weekStartsOn",
+    "dateFormat",
+    "theme",
+    "currency",
+    "language",
+    "expenseAlerts",
+    "budgetAlerts",
+    "incomeAlerts",
+    "weeklySummary",
+    "emailNotifications",
+    "twoFactorAuth",
   ],
 };
 
@@ -43,7 +56,7 @@ const enumValues: Partial<Record<UserDataResource, Record<string, readonly unkno
     frequency: ["Weekly", "Monthly", "Yearly"],
     status: ["active", "paused"],
   },
-  notifications: { type: ["expense", "budget", "goal", "account", "system"] },
+  notifications: { type: ["expense", "budget", "goal", "account", "system", "income"] },
   preferences: {
     weekStartsOn: ["Monday", "Sunday"],
     dateFormat: ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"],
@@ -94,12 +107,23 @@ function validateData(resource: UserDataResource, data: DataRecord): void {
       throw new UserDataError(`${key} must be a non-negative number`);
     }
 
-    if (key === "monthlyBudget" && (typeof value !== "string" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    if (
+      key === "monthlyBudget" &&
+      (typeof value !== "string" || !Number.isFinite(Number(value)) || Number(value) < 0)
+    ) {
       throw new UserDataError("monthlyBudget must be a non-negative number");
     }
 
     if (
-      ["read", "expenseAlerts", "budgetAlerts", "incomeAlerts", "weeklySummary", "emailNotifications", "twoFactorAuth"].includes(key) &&
+      [
+        "read",
+        "expenseAlerts",
+        "budgetAlerts",
+        "incomeAlerts",
+        "weeklySummary",
+        "emailNotifications",
+        "twoFactorAuth",
+      ].includes(key) &&
       typeof value !== "boolean"
     ) {
       throw new UserDataError(`${key} must be a boolean`);
@@ -114,16 +138,31 @@ function validateData(resource: UserDataResource, data: DataRecord): void {
     }
   }
 
-  if (resource === "goals" && typeof data.saved === "number" && typeof data.target === "number" && data.saved > data.target) {
+  if (
+    resource === "goals" &&
+    typeof data.saved === "number" &&
+    typeof data.target === "number" &&
+    data.saved > data.target
+  ) {
     throw new UserDataError("saved cannot exceed target");
   }
 
-  if (resource === "debts" && typeof data.paid === "number" && typeof data.amount === "number" && data.paid > data.amount) {
+  if (
+    resource === "debts" &&
+    typeof data.paid === "number" &&
+    typeof data.amount === "number" &&
+    data.paid > data.amount
+  ) {
     throw new UserDataError("paid cannot exceed amount");
   }
 }
 
-function normalizeDoc(doc: { _id: mongoose.Types.ObjectId; data: DataRecord; createdAt: Date; updatedAt: Date }) {
+function normalizeDoc(doc: {
+  _id: mongoose.Types.ObjectId;
+  data: DataRecord;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
   return {
     ...doc.data,
     _id: String(doc._id),
@@ -138,7 +177,11 @@ export async function listUserData(userId: string, resource: UserDataResource) {
   return docs.map(normalizeDoc);
 }
 
-export async function createUserData(userId: string, resource: UserDataResource, input: DataRecord) {
+export async function createUserData(
+  userId: string,
+  resource: UserDataResource,
+  input: DataRecord,
+) {
   assertUserId(userId);
   assertDataRecord(input);
   validateData(resource, input);

@@ -13,6 +13,7 @@ import {
   CircleCheck,
   Circle,
   Trash2,
+  BanknoteArrowUp,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ type NotificationType =
   | "budget"
   | "goal"
   | "account"
+  | "income"
   | "system";
 
 type NotificationItem = {
@@ -57,6 +59,7 @@ const notificationIcons: Record<
   goal: Target,
   account: CreditCard,
   system: Settings,
+  income:BanknoteArrowUp
 };
 
 function getNotificationIcon(type: string) {
