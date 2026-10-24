@@ -1,6 +1,6 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
-  ArrowDownRight,
   ArrowLeftRight,
   ArrowUpRight,
   CalendarDays,
@@ -10,12 +10,6 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
-  Utensils,
-  ShoppingBag,
-  House,
-  Zap,
-  BriefcaseBusiness,
-  Coffee,
   CircleDollarSign,
   type LucideIcon,
 } from "lucide-react";
@@ -30,9 +24,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Link } from "react-router";
+import {
+  getAccounts,
+  getAllTransactions,
+  type Account,
+  type Transaction as ApiTransaction,
+} from "@/lib/api-client";
 
 type Transaction = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   date: string;
@@ -40,80 +40,6 @@ type Transaction = {
   type: "income" | "expense" | "transfer";
   icon: LucideIcon;
 };
-
-const transactions: Transaction[] = [
-  {
-    id: 1,
-    title: "Monthly Salary",
-    category: "Salary",
-    date: "Today, 9:30 AM",
-    amount: 45000,
-    type: "income",
-    icon: BriefcaseBusiness,
-  },
-  {
-    id: 2,
-    title: "Grocery Shopping",
-    category: "Groceries",
-    date: "Today, 8:15 AM",
-    amount: 1250,
-    type: "expense",
-    icon: ShoppingBag,
-  },
-  {
-    id: 3,
-    title: "Electricity Bill",
-    category: "Utilities",
-    date: "Yesterday",
-    amount: 1850,
-    type: "expense",
-    icon: Zap,
-  },
-  {
-    id: 4,
-    title: "House Rent",
-    category: "Housing",
-    date: "Oct 20, 2026",
-    amount: 10000,
-    type: "expense",
-    icon: House,
-  },
-  {
-    id: 5,
-    title: "Coffee",
-    category: "Food & Dining",
-    date: "Oct 19, 2026",
-    amount: 180,
-    type: "expense",
-    icon: Coffee,
-  },
-  {
-    id: 6,
-    title: "Savings Transfer",
-    category: "Transfer",
-    date: "Oct 18, 2026",
-    amount: 5000,
-    type: "transfer",
-    icon: ArrowLeftRight,
-  },
-];
-
-const monthlyData = [
-  { month: "May", income: 42000, expense: 28000 },
-  { month: "Jun", income: 45000, expense: 31000 },
-  { month: "Jul", income: 43000, expense: 26000 },
-  { month: "Aug", income: 48000, expense: 34000 },
-  { month: "Sep", income: 46000, expense: 29000 },
-  { month: "Oct", income: 45000, expense: 18000 },
-];
-
-const spendingCategories = [
-  { name: "Housing", amount: 10000, percentage: 40, icon: House },
-  { name: "Food & Dining", amount: 4500, percentage: 18, icon: Utensils },
-  { name: "Shopping", amount: 3500, percentage: 14, icon: ShoppingBag },
-  { name: "Utilities", amount: 2500, percentage: 10, icon: Zap },
-  { name: "Other", amount: 4500, percentage: 18, icon: CircleDollarSign },
-];
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -123,6 +49,10 @@ const currency = new Intl.NumberFormat("en-IN", {
 
 function formatCurrency(amount: number) {
   return currency.format(amount);
+}
+
+function monthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function StatCard({
@@ -181,24 +111,123 @@ function StatCard({
 }
 
 export default function Dashboard() {
-  const totalIncome = 45000;
-  const totalExpenses = 25000;
-  const totalBalance = 125000;
-  const savings = totalIncome - totalExpenses;
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const currentMonthKey = monthKey(new Date());
 
+  useEffect(() => {
+    let active = true;
+    Promise.all([getAllTransactions(), getAccounts({ isActive: true })])
+      .then(([records, userAccounts]) => {
+        if (!active) return;
+        setTransactions(
+          records
+            .filter((record) => record.status === "completed")
+            .map((record: ApiTransaction) => ({
+            id: record._id,
+            title: record.description || record.type,
+            category:
+              typeof record.category === "object" && record.category
+                ? record.category.name
+                : "Uncategorized",
+            date: record.date.slice(0, 10),
+            amount: record.amount,
+            type: record.type,
+            icon:
+              record.type === "income"
+                ? ArrowDownLeft
+                : record.type === "transfer"
+                  ? ArrowLeftRight
+                  : ArrowUpRight,
+            })),
+        );
+        setAccounts(userAccounts);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setLoadError(error instanceof Error ? error.message : "Unable to load dashboard data.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const currentMonthTransactions = useMemo(
+    () =>
+      transactions.filter((transaction) => {
+        const record = transaction as Transaction & { date: string };
+        return record.date.includes(currentMonthKey);
+      }),
+    [transactions, currentMonthKey],
+  );
+  const totalIncome = currentMonthTransactions
+    .filter((transaction) => transaction.type === "income")
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const totalExpenses = currentMonthTransactions
+    .filter((transaction) => transaction.type === "expense")
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);
+  const savings = totalIncome - totalExpenses;
+  const monthlyData = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, index) => {
+        const date = new Date();
+        date.setDate(1);
+        date.setMonth(date.getMonth() - 5 + index);
+        const key = monthKey(date);
+        const records = transactions.filter((transaction) => transaction.date.slice(0, 7) === key);
+        return {
+          month: date.toLocaleDateString("en-IN", { month: "short" }),
+          income: records
+            .filter((transaction) => transaction.type === "income")
+            .reduce((sum, transaction) => sum + transaction.amount, 0),
+          expense: records
+            .filter((transaction) => transaction.type === "expense")
+            .reduce((sum, transaction) => sum + transaction.amount, 0),
+        };
+      }),
+    [transactions],
+  );
+  const spendingCategories = useMemo(() => {
+    const totals = new Map<string, number>();
+    currentMonthTransactions
+      .filter((transaction) => transaction.type === "expense")
+      .forEach((transaction) =>
+        totals.set(
+          transaction.category,
+          (totals.get(transaction.category) ?? 0) + transaction.amount,
+        ),
+      );
+    return Array.from(totals.entries())
+      .map(([name, amount]) => ({
+        name,
+        amount,
+        percentage: totalExpenses > 0 ? (amount / totalExpenses) * 100 : 0,
+        icon: CircleDollarSign,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [currentMonthTransactions, totalExpenses]);
   const maxMonthlyValue = Math.max(
-    ...monthlyData.map((item) => Math.max(item.income, item.expense))
+    1,
+    ...monthlyData.map((item) => Math.max(item.income, item.expense)),
   );
 
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-360 space-y-8">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Header */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <Button variant="outline" className="gap-2">
               <CalendarDays className="size-4" />
-              October 2026
+              {new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(new Date())}
             </Button>
 
             <Button variant="default" className={"flex justify-center"}>
@@ -319,19 +348,19 @@ export default function Dashboard() {
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    October income
+                    This month income
                   </p>
                   <p className="mt-1 font-semibold">
-                    {formatCurrency(45000)}
+                    {formatCurrency(totalIncome)}
                   </p>
                 </div>
 
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    October expenses
+                    This month expenses
                   </p>
                   <p className="mt-1 font-semibold">
-                    {formatCurrency(25000)}
+                    {formatCurrency(totalExpenses)}
                   </p>
                 </div>
 
@@ -340,7 +369,7 @@ export default function Dashboard() {
                     Net cash flow
                   </p>
                   <p className="mt-1 font-semibold">
-                    {formatCurrency(20000)}
+                    {formatCurrency(savings)}
                   </p>
                 </div>
               </div>
@@ -361,7 +390,7 @@ export default function Dashboard() {
             <CardContent className="space-y-5 px-5">
               <div>
                 <p className="text-2xl font-semibold">
-                  {formatCurrency(25000)}
+                  {formatCurrency(totalExpenses)}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Total categorized expenses
@@ -436,75 +465,31 @@ export default function Dashboard() {
             </CardHeader>
 
             <CardContent className="space-y-3 px-5">
-              <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                    <BanknoteIcon />
+              {accounts.map((account) => (
+                <div key={account._id} className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      {account.type === "cash" || account.type === "wallet" ? (
+                        <Wallet className="size-4 text-muted-foreground" />
+                      ) : (
+                        <CreditCard className="size-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{account.name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{account.type.replace("_", " ")}</p>
+                    </div>
                   </div>
-
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      Cash Wallet
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Cash
-                    </p>
-                  </div>
+                  <p className="shrink-0 text-sm font-semibold">{formatCurrency(account.currentBalance)}</p>
                 </div>
-
-                <p className="shrink-0 text-sm font-semibold">
-                  {formatCurrency(5000)}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                    <CreditCard className="size-4 text-muted-foreground" />
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      Bank Account
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Primary account
-                    </p>
-                  </div>
-                </div>
-
-                <p className="shrink-0 text-sm font-semibold">
-                  {formatCurrency(95000)}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                    <Wallet className="size-4 text-muted-foreground" />
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      Savings Account
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Savings
-                    </p>
-                  </div>
-                </div>
-
-                <p className="shrink-0 text-sm font-semibold">
-                  {formatCurrency(25000)}
-                </p>
-              </div>
+              ))}
 
               <div className="flex items-center justify-between border-t pt-4">
                 <span className="text-sm text-muted-foreground">
                   Total balance
                 </span>
                 <span className="font-semibold">
-                  {formatCurrency(125000)}
+                  {formatCurrency(totalBalance)}
                 </span>
               </div>
             </CardContent>
@@ -529,7 +514,7 @@ export default function Dashboard() {
 
             <CardContent className="px-5 sm:px-6">
               <div className="space-y-1">
-                {transactions.map((transaction) => {
+                {transactions.slice(0, 6).map((transaction) => {
                   const Icon = transaction.icon;
                   const isIncome = transaction.type === "income";
                   const isTransfer = transaction.type === "transfer";

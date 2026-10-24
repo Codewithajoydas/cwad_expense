@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler } from "express";
-import { logger } from "../config/logger.js";
+import { logger } from "../config/logger.config.js";
 
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   logger.error({ err: error }, "Unhandled request error");

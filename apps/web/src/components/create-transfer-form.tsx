@@ -4,10 +4,8 @@ import {
   ArrowDown,
   ArrowLeftRight,
   ArrowRight,
-  Banknote,
   CalendarDays,
   Check,
-  Landmark,
   Plus,
   Wallet,
 } from "lucide-react";
@@ -23,14 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const accounts = [
-  { value: "cash", label: "Cash Wallet", icon: Banknote },
-  { value: "bank", label: "Bank Account", icon: Landmark },
-  { value: "savings", label: "Savings Account", icon: Wallet },
-];
+import { createTransaction } from "@/lib/api-client";
+import { useFinanceOptions } from "@/lib/use-finance-options";
 
 export default function CreateTransferForm() {
+  const { accounts, isLoading: isLoadingOptions, error: optionsError } = useFinanceOptions();
   const [amount, setAmount] = useState("");
   const [fromAccount, setFromAccount] = useState("");
   const [toAccount, setToAccount] = useState("");
@@ -38,12 +33,16 @@ export default function CreateTransferForm() {
     new Date().toLocaleDateString("en-CA")
   );
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
-    const formData = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
     const numericAmount = Number(amount);
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
@@ -61,16 +60,27 @@ export default function CreateTransferForm() {
       return;
     }
 
-    const transfer = {
-      amount: numericAmount,
-      fromAccount,
-      toAccount,
-      date,
-      notes: String(formData.get("notes") ?? "").trim(),
-    };
-
-    // TODO: Save transfer through your API.
-    console.log("Transfer:", transfer);
+    try {
+      setIsSubmitting(true);
+      await createTransaction({
+        type: "transfer",
+        amount: numericAmount,
+        account: fromAccount,
+        toAccount,
+        date,
+        notes: String(formData.get("notes") ?? "").trim(),
+        status: "completed",
+      });
+      setSuccess("Transfer recorded successfully.");
+      setAmount("");
+      setFromAccount("");
+      setToAccount("");
+      formElement.reset();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save transfer.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function swapAccounts() {
@@ -142,13 +152,11 @@ export default function CreateTransferForm() {
 
               <SelectContent>
                 {accounts.map((account) => {
-                  const Icon = account.icon;
-
                   return (
-                    <SelectItem key={account.value} value={account.value}>
+                    <SelectItem key={account._id} value={account._id}>
                       <span className="flex items-center gap-2">
-                        <Icon className="size-4 text-muted-foreground" />
-                        {account.label}
+                        <Wallet className="size-4 text-muted-foreground" />
+                        {account.name}
                       </span>
                     </SelectItem>
                   );
@@ -190,13 +198,11 @@ export default function CreateTransferForm() {
 
               <SelectContent>
                 {accounts.map((account) => {
-                  const Icon = account.icon;
-
                   return (
-                    <SelectItem key={account.value} value={account.value}>
+                    <SelectItem key={account._id} value={account._id}>
                       <span className="flex items-center gap-2">
-                        <Icon className="size-4 text-muted-foreground" />
-                        {account.label}
+                        <Wallet className="size-4 text-muted-foreground" />
+                        {account.name}
                       </span>
                     </SelectItem>
                   );
@@ -212,11 +218,11 @@ export default function CreateTransferForm() {
             <span className="text-muted-foreground">
               Money will move from{" "}
               <span className="font-medium text-foreground">
-                {accounts.find((item) => item.value === fromAccount)?.label}
+                {accounts.find((item) => item._id === fromAccount)?.name}
               </span>{" "}
               to{" "}
               <span className="font-medium text-foreground">
-                {accounts.find((item) => item.value === toAccount)?.label}
+                {accounts.find((item) => item._id === toAccount)?.name}
               </span>
               .
             </span>
@@ -262,11 +268,12 @@ export default function CreateTransferForm() {
       </section>
 
       {/* Validation */}
-      {error && (
+      {(optionsError || error) && (
         <p role="alert" className="text-sm font-medium text-destructive">
-          {error}
+          {optionsError || error}
         </p>
       )}
+      {success && <p role="status" className="text-sm text-green-700">{success}</p>}
 
       {/* Submit */}
       <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -274,9 +281,8 @@ export default function CreateTransferForm() {
           Review both accounts before confirming.
         </p>
 
-        <Button type="submit" className="h-11 w-full sm:w-auto">
-          <ArrowLeftRight className="mr-2 size-4" />
-          Transfer money
+        <Button type="submit" disabled={isSubmitting || isLoadingOptions} className="h-11 w-full sm:w-auto">
+          {isSubmitting ? "Saving..." : <><ArrowLeftRight className="mr-2 size-4" />Transfer money</>}
         </Button>
       </div>
     </form>

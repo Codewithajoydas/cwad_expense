@@ -1,5 +1,5 @@
 
-import transport from "../config/nodemailer.js";
+import transport from "../config/nodemailer.config.js";
 
 type EmailBase = {
   to: string;

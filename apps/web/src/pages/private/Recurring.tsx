@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -39,18 +39,30 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  createRecurringSchedule,
+  deleteRecurringSchedule,
+  getAccounts,
+  getCategories,
+  getRecurringSchedules,
+  updateRecurringSchedule,
+  type Account,
+  type Category,
+  type RecurringSchedule,
+} from "@/lib/api-client";
 
 type Frequency = "Weekly" | "Monthly" | "Yearly";
 type TransactionType = "expense" | "income";
 type ScheduleStatus = "active" | "paused";
 
 type RecurringTransaction = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   type: TransactionType;
   amount: number;
   account: string;
+  accountId?: string;
   frequency: Frequency;
   startDate: string;
   nextDate: string;
@@ -74,129 +86,6 @@ function offsetDate(days: number) {
   date.setDate(date.getDate() + days);
   return dateKey(date);
 }
-
-const initialTransactions: RecurringTransaction[] = [
-  {
-    id: 1,
-    title: "House Rent",
-    category: "Housing",
-    type: "expense",
-    amount: 12000,
-    account: "HDFC Bank",
-    frequency: "Monthly",
-    startDate: offsetDate(-90),
-    nextDate: offsetDate(5),
-    endDate: "",
-    status: "active",
-    note: "Monthly house rent",
-  },
-  {
-    id: 2,
-    title: "Internet Bill",
-    category: "Bills",
-    type: "expense",
-    amount: 799,
-    account: "HDFC Bank",
-    frequency: "Monthly",
-    startDate: offsetDate(-60),
-    nextDate: offsetDate(2),
-    endDate: "",
-    status: "active",
-    note: "Broadband subscription",
-  },
-  {
-    id: 3,
-    title: "Monthly Salary",
-    category: "Salary",
-    type: "income",
-    amount: 45000,
-    account: "HDFC Bank",
-    frequency: "Monthly",
-    startDate: offsetDate(-180),
-    nextDate: offsetDate(7),
-    endDate: "",
-    status: "active",
-    note: "Monthly salary credit",
-  },
-  {
-    id: 4,
-    title: "Streaming Subscription",
-    category: "Entertainment",
-    type: "expense",
-    amount: 499,
-    account: "ICICI Credit Card",
-    frequency: "Monthly",
-    startDate: offsetDate(-30),
-    nextDate: offsetDate(10),
-    endDate: "",
-    status: "active",
-    note: "Entertainment subscription",
-  },
-  {
-    id: 5,
-    title: "Gym Membership",
-    category: "Health",
-    type: "expense",
-    amount: 1500,
-    account: "HDFC Bank",
-    frequency: "Monthly",
-    startDate: offsetDate(-30),
-    nextDate: offsetDate(15),
-    endDate: "",
-    status: "paused",
-    note: "Gym membership",
-  },
-  {
-    id: 6,
-    title: "Insurance Premium",
-    category: "Insurance",
-    type: "expense",
-    amount: 12000,
-    account: "HDFC Bank",
-    frequency: "Yearly",
-    startDate: offsetDate(-100),
-    nextDate: offsetDate(40),
-    endDate: "",
-    status: "active",
-    note: "Annual insurance payment",
-  },
-  {
-    id: 7,
-    title: "Weekly Groceries",
-    category: "Food",
-    type: "expense",
-    amount: 1500,
-    account: "Cash",
-    frequency: "Weekly",
-    startDate: offsetDate(-20),
-    nextDate: offsetDate(3),
-    endDate: "",
-    status: "active",
-    note: "Weekly household groceries",
-  },
-];
-
-const categories = [
-  "Housing",
-  "Food",
-  "Transport",
-  "Shopping",
-  "Bills",
-  "Entertainment",
-  "Health",
-  "Insurance",
-  "Salary",
-  "Freelance",
-  "Business",
-  "Other",
-];
-
-const accounts = [
-  "Cash",
-  "HDFC Bank",
-  "SBI Savings",
-  "ICICI Credit Card",
-];
 
 const currency = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -224,10 +113,10 @@ function getMonthlyAmount(item: RecurringTransaction) {
 
 const emptyForm = {
   title: "",
-  category: "Bills",
+  category: "",
   type: "expense" as TransactionType,
   amount: "",
-  account: "HDFC Bank",
+  account: "",
   frequency: "Monthly" as Frequency,
   startDate: dateKey(today),
   nextDate: offsetDate(1),
@@ -236,19 +125,62 @@ const emptyForm = {
 };
 
 export default function Recurring() {
-  const [transactions, setTransactions] =
-    useState<RecurringTransaction[]>(initialTransactions);
+  const [transactions, setTransactions] = useState<RecurringTransaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadError, setLoadError] = useState("");
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      getRecurringSchedules(),
+      getAccounts({ isActive: true }),
+      getCategories({ isActive: true }),
+    ])
+      .then(([records, userAccounts, userCategories]) => {
+        if (!active) return;
+        setAccounts(userAccounts);
+        setCategories(userCategories);
+        setTransactions(
+          records.map((item: RecurringSchedule) => ({
+            id: item._id,
+            title: item.title,
+            category: item.category,
+            type: item.type,
+            amount: item.amount,
+            accountId:
+              typeof item.account === "string" ? item.account : "",
+            account:
+              typeof item.account === "string"
+                ? userAccounts.find((account) => account._id === item.account)?.name ?? item.account
+                : item.account,
+            frequency: item.frequency,
+            startDate: item.startDate.slice(0, 10),
+            nextDate: item.nextDate.slice(0, 10),
+            endDate: item.endDate?.slice(0, 10) ?? "",
+            status: item.status,
+            note: item.note ?? "",
+          })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load recurring schedules.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const summary = useMemo(() => {
     const active = transactions.filter(
@@ -304,7 +236,11 @@ export default function Recurring() {
 
   function openCreateDialog() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      category: categories.find((category) => category.type === "expense")?.name ?? "",
+      account: accounts[0]?._id ?? "",
+    });
     setFormError("");
     setDialogOpen(true);
   }
@@ -317,7 +253,7 @@ export default function Recurring() {
       category: item.category,
       type: item.type,
       amount: String(item.amount),
-      account: item.account,
+      account: item.accountId ?? "",
       frequency: item.frequency,
       startDate: item.startDate,
       nextDate: item.nextDate,
@@ -329,7 +265,7 @@ export default function Recurring() {
     setDialogOpen(true);
   }
 
-  function saveTransaction() {
+  async function saveTransaction() {
     const amount = Number(form.amount);
 
     if (!form.title.trim()) {
@@ -339,6 +275,11 @@ export default function Recurring() {
 
     if (!Number.isFinite(amount) || amount <= 0) {
       setFormError("Amount must be greater than zero.");
+      return;
+    }
+
+    if (!form.account) {
+      setFormError("Create an active account before adding a recurring schedule.");
       return;
     }
 
@@ -367,12 +308,14 @@ export default function Recurring() {
     );
 
     const updated: RecurringTransaction = {
-      id: editingId ?? Date.now(),
+      id: editingId ?? "",
       title: form.title.trim(),
       category: form.category,
       type: form.type,
       amount,
-      account: form.account,
+      account:
+        accounts.find((account) => account._id === form.account)?.name ?? form.account,
+      accountId: form.account,
       frequency: form.frequency,
       startDate: form.startDate,
       nextDate: form.nextDate,
@@ -381,41 +324,62 @@ export default function Recurring() {
       note: form.note.trim(),
     };
 
-    if (editingId !== null) {
+    try {
+      const body = {
+        title: updated.title,
+        category: updated.category,
+        type: updated.type,
+        amount: updated.amount,
+        account: form.account,
+        frequency: updated.frequency,
+        startDate: updated.startDate,
+        nextDate: updated.nextDate,
+        endDate: updated.endDate,
+        status: updated.status,
+        note: updated.note,
+      };
+      const saved = editingId
+        ? await updateRecurringSchedule(editingId, body)
+        : await createRecurringSchedule(body);
+      updated.id = saved._id;
       setTransactions((current) =>
-        current.map((item) =>
-          item.id === editingId ? updated : item,
+        editingId
+          ? current.map((item) => (item.id === editingId ? updated : item))
+          : [updated, ...current],
+      );
+      setDialogOpen(false);
+      setFormError("");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save recurring schedule.");
+    }
+  }
+
+  async function toggleStatus(id: string) {
+    const item = transactions.find((schedule) => schedule.id === id);
+    if (!item) return;
+    const status = item.status === "active" ? "paused" : "active";
+    try {
+      const updated = await updateRecurringSchedule(id, { status });
+      setTransactions((current) =>
+        current.map((schedule) =>
+          schedule.id === id ? { ...schedule, status: updated.status } : schedule,
         ),
       );
-    } else {
-      setTransactions((current) => [updated, ...current]);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to update recurring schedule.");
     }
-
-    setDialogOpen(false);
-    setFormError("");
   }
 
-  function toggleStatus(id: number) {
-    setTransactions((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: item.status === "active" ? "paused" : "active",
-            }
-          : item,
-      ),
-    );
-  }
-
-  function deleteTransaction() {
+  async function deleteTransaction() {
     if (deleteId === null) return;
 
-    setTransactions((current) =>
-      current.filter((item) => item.id !== deleteId),
-    );
-
-    setDeleteId(null);
+    try {
+      await deleteRecurringSchedule(deleteId);
+      setTransactions((current) => current.filter((item) => item.id !== deleteId));
+      setDeleteId(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to delete recurring schedule.");
+    }
   }
 
   const transactionToDelete = transactions.find(
@@ -425,6 +389,11 @@ export default function Recurring() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
           <Button onClick={openCreateDialog}>
@@ -767,9 +736,8 @@ export default function Recurring() {
           <div>
             <p className="text-sm font-medium">How recurring schedules work</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              This page manages your schedule definitions. Automatic
-              transaction creation, reminders, and account balance updates
-              require backend integration.
+              Schedule details are saved to your account. Automatic
+              transaction creation and reminders are not enabled.
             </p>
           </div>
         </div>
@@ -811,12 +779,14 @@ export default function Recurring() {
                 id="recurringType"
                 value={form.type}
                 onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    type: event.target.value as TransactionType,
-                    category:
-                      event.target.value === "income" ? "Salary" : "Bills",
-                  }))
+                  setForm((current) => {
+                    const type = event.target.value as TransactionType;
+                    return {
+                      ...current,
+                      type,
+                      category: categories.find((category) => category.type === type)?.name ?? "",
+                    };
+                  })
                 }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
@@ -857,18 +827,10 @@ export default function Recurring() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {categories
-                  .filter((category) =>
-                    form.type === "income"
-                      ? ["Salary", "Freelance", "Business", "Other"].includes(
-                          category,
-                        )
-                      : category !== "Salary" &&
-                        category !== "Freelance" &&
-                        category !== "Business",
-                  )
+                  .filter((category) => category.type === form.type)
                   .map((category) => (
-                    <option key={category} value={category}>
-                      {category}
+                    <option key={category._id} value={category.name}>
+                      {category.name}
                     </option>
                   ))}
               </select>
@@ -888,8 +850,8 @@ export default function Recurring() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {accounts.map((account) => (
-                  <option key={account} value={account}>
-                    {account}
+                  <option key={account._id} value={account._id}>
+                    {account.name}
                   </option>
                 ))}
               </select>

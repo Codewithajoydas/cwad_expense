@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
+import { getAllTransactions, getPreferences, savePreferences } from "@/lib/api-client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,6 +101,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(true);
 
   const { data: session, isPending } = authClient.useSession();
 
@@ -114,6 +116,29 @@ export default function SettingsPage() {
       }));
     }
   }, [user?.id, user?.name]);
+
+  useEffect(() => {
+    let active = true;
+    getPreferences()
+      .then((preferences) => {
+        if (!active || !preferences) return;
+        setSettings((current) => ({
+          ...current,
+          ...preferences,
+          monthlyBudget: String(preferences.monthlyBudget),
+          name: user?.name || "",
+        }));
+      })
+      .catch((error: unknown) => {
+        if (active) setSaveError(error instanceof Error ? error.message : "Unable to load preferences.");
+      })
+      .finally(() => {
+        if (active) setIsLoadingPreferences(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.name]);
 
   const userName = user?.name?.trim() || "User";
   const userEmail = user?.email || "";
@@ -170,8 +195,8 @@ export default function SettingsPage() {
         return;
       }
 
-      // Other preferences are currently stored in component state only.
-      // Connect them to your backend or persistent storage to save them.
+      const { name: _name, ...preferences } = settings;
+      await savePreferences(preferences);
       setSaved(true);
     } catch (error) {
       setSaveError(
@@ -219,10 +244,30 @@ export default function SettingsPage() {
     }
   }
 
-  function handleExport() {
-    window.alert(
-      "Connect your transaction data to enable financial data export.",
-    );
+  async function handleExport() {
+    try {
+      const transactions = await getAllTransactions();
+      const rows = [
+        ["Date", "Type", "Description", "Amount", "Account", "Category"],
+        ...transactions.map((item) => [
+          item.date,
+          item.type,
+          item.description,
+          String(item.amount),
+          typeof item.account === "string" ? item.account : item.account.name,
+          typeof item.category === "string" ? item.category : item.category?.name ?? "",
+        ]),
+      ];
+      const csv = rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(",")).join("\r\n");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "cwad-expense-transactions.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Unable to export transactions.");
+    }
   }
 
   return (
@@ -231,6 +276,7 @@ export default function SettingsPage() {
         {/* Page heading */}
    
 
+        {isLoadingPreferences && <p role="status" className="text-sm text-muted-foreground">Loading preferences...</p>}
         <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
           {/* Settings navigation */}
           <aside>

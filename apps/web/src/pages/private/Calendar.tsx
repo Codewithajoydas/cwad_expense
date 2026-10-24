@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -16,9 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getAllTransactions, type Transaction as ApiTransaction } from "@/lib/api-client";
 
 type Transaction = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   amount: number;
@@ -36,96 +37,6 @@ function formatDateKey(date: Date) {
 
   return `${year}-${month}-${day}`;
 }
-
-function makeDate(day: number) {
-  return formatDateKey(
-    new Date(today.getFullYear(), today.getMonth(), day),
-  );
-}
-
-const initialTransactions: Transaction[] = [
-  {
-    id: 1,
-    title: "Grocery shopping",
-    category: "Food",
-    amount: 1250,
-    type: "expense",
-    date: makeDate(2),
-    account: "HDFC Bank",
-  },
-  {
-    id: 2,
-    title: "Monthly salary",
-    category: "Salary",
-    amount: 45000,
-    type: "income",
-    date: makeDate(5),
-    account: "HDFC Bank",
-  },
-  {
-    id: 3,
-    title: "Electricity bill",
-    category: "Bills",
-    amount: 1800,
-    type: "expense",
-    date: makeDate(8),
-    account: "HDFC Bank",
-  },
-  {
-    id: 4,
-    title: "Lunch",
-    category: "Food",
-    amount: 350,
-    type: "expense",
-    date: makeDate(10),
-    account: "Cash",
-  },
-  {
-    id: 5,
-    title: "Freelance project",
-    category: "Freelance",
-    amount: 8500,
-    type: "income",
-    date: makeDate(12),
-    account: "HDFC Bank",
-  },
-  {
-    id: 6,
-    title: "Petrol",
-    category: "Transport",
-    amount: 1200,
-    type: "expense",
-    date: makeDate(15),
-    account: "Cash",
-  },
-  {
-    id: 7,
-    title: "Online shopping",
-    category: "Shopping",
-    amount: 2499,
-    type: "expense",
-    date: makeDate(18),
-    account: "HDFC Bank",
-  },
-  {
-    id: 8,
-    title: "Restaurant",
-    category: "Food",
-    amount: 850,
-    type: "expense",
-    date: makeDate(20),
-    account: "Cash",
-  },
-  {
-    id: 9,
-    title: "Internet bill",
-    category: "Bills",
-    amount: 799,
-    type: "expense",
-    date: makeDate(today.getDate()),
-    account: "HDFC Bank",
-  },
-];
 
 const currency = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -153,8 +64,45 @@ export default function Calendar() {
     new Date(today.getFullYear(), today.getMonth(), 1),
   );
   const [selectedDate, setSelectedDate] = useState(formatDateKey(today));
-  const [transactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState<"all" | "expense" | "income">("all");
+
+  useEffect(() => {
+    let active = true;
+    getAllTransactions()
+      .then((records) => {
+        if (!active) return;
+        setTransactions(
+          records
+            .filter(
+              (record): record is ApiTransaction & { type: "income" | "expense" } =>
+                record.status === "completed" && record.type !== "transfer",
+            )
+            .map((record) => ({
+              id: record._id,
+              title: record.description || record.type,
+              category:
+                typeof record.category === "object" && record.category
+                  ? record.category.name
+                  : "Uncategorized",
+              amount: record.amount,
+              type: record.type,
+              date: record.date.slice(0, 10),
+              account:
+                typeof record.account === "object"
+                  ? record.account.name
+                  : "Account",
+            })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load calendar data.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const year = visibleMonth.getFullYear();
   const month = visibleMonth.getMonth();
@@ -250,6 +198,11 @@ export default function Calendar() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
 

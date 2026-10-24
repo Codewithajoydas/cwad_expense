@@ -1,4 +1,3 @@
-
 import compression from "compression";
 import cors from "cors";
 import express from "express";
@@ -7,21 +6,26 @@ import helmet from "helmet";
 import pinoHttp from "pino-http";
 import { toNodeHandler } from "better-auth/node";
 
-import { env } from "./config/env.js";
-import { logger } from "./config/logger.js";
-import { connectToMongoDB } from "./config/db.js";
-import { createAuth } from "./lib/auth.js";
+import { env } from "./config/env.config.js";
+import { logger } from "./config/logger.config.js";
+import { connectToMongoDB } from "./config/db.config.js";
+import { auth } from "./lib/auth.lib.js";
 
-import { errorHandler } from "./middlewares/error-handler.js";
-import { notFoundMiddleware } from "./middlewares/not-found.js";
-import { requestIdMiddleware } from "./middlewares/request-id.js";
+import { errorHandler } from "./middlewares/error-handler.middleware.js";
+import { notFoundMiddleware } from "./middlewares/not-found.middleware.js";
+import { requestIdMiddleware } from "./middlewares/request-id.middleware.js";
 
 import { healthRouter } from "./routes/health.routes.js";
 
-export async function createApp() {
-  const { db } = await connectToMongoDB();
-  const auth = createAuth(db);
+//=============================ROUTES====================================//
+import transactionRoutes from "./routes/transaction.routes.js";
+import accountRoutes from "./routes/account.routes.js";
+import categoryRoutes from "./routes/category.routes.js";
+import userDataRoutes from "./routes/user-data.routes.js";
+//=============================ROUTES====================================//
 
+export async function createApp() {
+  await connectToMongoDB();
   const app = express();
 
   app.disable("x-powered-by");
@@ -38,7 +42,6 @@ export async function createApp() {
 
   app.use(compression());
 
-  // Better Auth must be mounted before express.json().
   app.all("/api/auth/*splat", toNodeHandler(auth));
 
   app.use(express.json({ limit: "1mb" }));
@@ -52,6 +55,7 @@ export async function createApp() {
     }),
   );
 
+  // @ts-ignore
   app.use(pinoHttp({ logger }));
 
   app.get("/", (_req, res) => {
@@ -63,7 +67,10 @@ export async function createApp() {
   });
 
   app.use("/api/v1", healthRouter);
-
+  app.use("/api/transactions", transactionRoutes);
+  app.use("/api/accounts", accountRoutes);
+  app.use("/api/categories", categoryRoutes);
+  app.use("/api/data", userDataRoutes);
   app.use(notFoundMiddleware);
   app.use(errorHandler);
 

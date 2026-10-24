@@ -1,7 +1,8 @@
 
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
-import { sendEmail } from "../lib/send-email.js";
+import { sendEmail } from "./send-email.lib.js";
+import { connectToMongoDB } from "../config/db.config.js";
 
 export function createAuth(db: Parameters<typeof mongodbAdapter>[0]) {
   return betterAuth({
@@ -42,3 +43,7 @@ export function createAuth(db: Parameters<typeof mongodbAdapter>[0]) {
     },
   });
 }
+
+
+const {db} = await connectToMongoDB();
+export const auth = createAuth(db);

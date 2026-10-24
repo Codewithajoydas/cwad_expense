@@ -19,6 +19,7 @@ import {
   Wallet,
   Zap,
 } from "lucide-react";
+import type { FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,60 +32,93 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { createTransaction } from "@/lib/api-client";
+import { useFinanceOptions } from "@/lib/use-finance-options";
 
-const categories = [
-  { id: "food", label: "Food & Dining", icon: Utensils },
-  { id: "groceries", label: "Groceries", icon: ShoppingCart },
-  { id: "transport", label: "Transport", icon: Bus },
-  { id: "shopping", label: "Shopping", icon: ShoppingBag },
-  { id: "bills", label: "Bills & Utilities", icon: Zap },
-  { id: "housing", label: "Housing", icon: House },
-  { id: "health", label: "Healthcare", icon: HeartPulse },
-  { id: "education", label: "Education", icon: GraduationCap },
-  { id: "entertainment", label: "Entertainment", icon: Clapperboard },
-  { id: "coffee", label: "Coffee", icon: Coffee },
-  { id: "mobile", label: "Phone & Internet", icon: Smartphone },
-  { id: "business", label: "Business", icon: BriefcaseBusiness },
-  { id: "cash", label: "Cash Expense", icon: Banknote },
-  { id: "other", label: "Other", icon: MoreHorizontal },
-];
-
-const accounts = [
-  { value: "cash", label: "Cash Wallet" },
-  { value: "bank", label: "Bank Account" },
-  { value: "savings", label: "Savings Account" },
-];
+const categoryIcons: Record<string, typeof Utensils> = {
+  food: Utensils,
+  groceries: ShoppingCart,
+  transport: Bus,
+  shopping: ShoppingBag,
+  utilities: Zap,
+  housing: House,
+  health: HeartPulse,
+  education: GraduationCap,
+  entertainment: Clapperboard,
+  coffee: Coffee,
+  mobile: Smartphone,
+  business: BriefcaseBusiness,
+  cash: Banknote,
+  other: MoreHorizontal,
+};
 
 export default function CreateExpenseForm() {
-  const [category, setCategory] = useState("food");
+  const { accounts, categories, isLoading: isLoadingOptions, error: optionsError } = useFinanceOptions("expense");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [category, setCategory] = useState("");
   const [account, setAccount] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toLocaleDateString("en-CA"));
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const formData = new FormData(event.currentTarget);
+    setError("");
+    setSuccess("");
 
-    const expense = {
-      title: String(formData.get("title") ?? "").trim(),
-      amount: Number(amount),
-      category,
-      account,
-      date,
-      notes: String(formData.get("notes") ?? "").trim(),
-    };
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
 
-    if (!expense.title || !Number.isFinite(expense.amount) || expense.amount <= 0) {
+    const title = String(formData.get("title") ?? "").trim();
+    const notes = String(formData.get("notes") ?? "").trim();
+    const numericAmount = Number(amount);
+
+    if (!title) {
+      setError("Please enter an expense title.");
       return;
     }
 
-    if (!expense.category || !expense.account || !expense.date) {
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setError("Please enter a valid expense amount.");
       return;
     }
 
-    // TODO: Send expense to your API.
-    console.log("Expense:", expense);
+    if (!category || !account || !date) {
+      setError("Please select a category, account, and date.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      await createTransaction({
+        type: "expense",
+        amount: numericAmount,
+        description: title,
+        category,
+        account,
+        date,
+        notes,
+        paymentMethod: "other",
+        status: "completed",
+      });
+
+      setSuccess("Expense saved successfully.");
+
+      setAmount("");
+      setCategory("");
+      setAccount("");
+
+      formElement.reset();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong while saving the expense.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -135,20 +169,20 @@ export default function CreateExpenseForm() {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <span className="shrink-0 text-xs text-muted-foreground">
-            {categories.length} categories
+            {isLoadingOptions ? "Loading categories..." : `${categories.length} categories`}
           </span>
         </div>
 
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {categories.map((item) => {
-            const Icon = item.icon;
-            const selected = category === item.id;
+            const Icon = categoryIcons[item.icon] ?? MoreHorizontal;
+            const selected = category === item._id;
 
             return (
               <button
-                key={item.id}
+                key={item._id}
                 type="button"
-                onClick={() => setCategory(item.id)}
+                onClick={() => setCategory(item._id)}
                 aria-pressed={selected}
                 className={`flex min-h-22 flex-col items-center justify-center gap-2 rounded-lg border p-2 text-center transition-colors ${
                   selected
@@ -158,7 +192,7 @@ export default function CreateExpenseForm() {
               >
                 <Icon className={`size-5 ${selected ? "text-primary" : ""}`} strokeWidth={1.8} />
 
-                <span className="text-xs font-medium leading-tight">{item.label}</span>
+                <span className="text-xs font-medium leading-tight">{item.name}</span>
               </button>
             );
           })}
@@ -178,8 +212,8 @@ export default function CreateExpenseForm() {
 
             <SelectContent>
               {accounts.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
+                <SelectItem key={item._id} value={item._id}>
+                  {item.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -220,13 +254,36 @@ export default function CreateExpenseForm() {
         />
       </section>
 
+      {(optionsError || error) && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          {optionsError || error}
+        </div>
+      )}
+
+      {success && (
+        <div
+          role="status"
+          className="rounded-lg border border-green-600/20 bg-green-600/5 px-4 py-3 text-sm text-green-700"
+        >
+          {success}
+        </div>
+      )}
       {/* Actions */}
       <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">Check your details before saving.</p>
 
-        <Button type="submit" className="h-11 w-full sm:w-auto">
-          <Plus className="mr-2 size-4" />
-          Save expense
+        <Button type="submit" disabled={isSubmitting} className="h-11 w-full sm:w-auto">
+          {isSubmitting ? (
+            "Saving..."
+          ) : (
+            <>
+              <Plus className="mr-2 size-4" />
+              Save expense
+            </>
+          )}
         </Button>
       </div>
     </form>

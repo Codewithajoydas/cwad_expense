@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -37,11 +37,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  createDebt as createDebtRecord,
+  deleteDebt as deleteDebtRecord,
+  getDebts,
+  updateDebt as updateDebtRecord,
+  type Debt as ApiDebt,
+} from "@/lib/api-client";
 
 type DebtType = "lent" | "borrowed";
 
 type Debt = {
-  id: number;
+  id: string;
   person: string;
   type: DebtType;
   amount: number;
@@ -60,65 +67,6 @@ function dateKey(date: Date) {
 
   return `${year}-${month}-${day}`;
 }
-
-function offsetDate(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return dateKey(date);
-}
-
-const initialDebts: Debt[] = [
-  {
-    id: 1,
-    person: "Rahul Sharma",
-    type: "lent",
-    amount: 10000,
-    paid: 3000,
-    date: offsetDate(-20),
-    dueDate: offsetDate(10),
-    note: "Personal loan",
-  },
-  {
-    id: 2,
-    person: "Amit Kumar",
-    type: "borrowed",
-    amount: 15000,
-    paid: 5000,
-    date: offsetDate(-30),
-    dueDate: offsetDate(15),
-    note: "Emergency expenses",
-  },
-  {
-    id: 3,
-    person: "Priya Das",
-    type: "lent",
-    amount: 5000,
-    paid: 0,
-    date: offsetDate(-10),
-    dueDate: offsetDate(5),
-    note: "Shared trip expenses",
-  },
-  {
-    id: 4,
-    person: "Suman Roy",
-    type: "borrowed",
-    amount: 8000,
-    paid: 2000,
-    date: offsetDate(-15),
-    dueDate: offsetDate(-2),
-    note: "Personal borrowing",
-  },
-  {
-    id: 5,
-    person: "Ankit Verma",
-    type: "lent",
-    amount: 2500,
-    paid: 2500,
-    date: offsetDate(-45),
-    dueDate: offsetDate(-30),
-    note: "Repaid in full",
-  },
-];
 
 const currency = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -147,21 +95,48 @@ const initialForm = {
 };
 
 export default function Debts() {
-  const [debts, setDebts] = useState<Debt[]>(initialDebts);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState("");
 
   const [repaymentOpen, setRepaymentOpen] = useState(false);
-  const [selectedDebtId, setSelectedDebtId] = useState<number | null>(null);
+  const [selectedDebtId, setSelectedDebtId] = useState<string | null>(null);
   const [repaymentAmount, setRepaymentAmount] = useState("");
   const [repaymentError, setRepaymentError] = useState("");
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getDebts()
+      .then((records) => {
+        if (!active) return;
+        setDebts(
+          records.map((debt: ApiDebt) => ({
+            id: debt._id,
+            person: debt.person,
+            type: debt.type,
+            amount: debt.amount,
+            paid: debt.paid,
+            date: debt.date.slice(0, 10),
+            dueDate: debt.dueDate?.slice(0, 10) ?? "",
+            note: debt.note ?? "",
+          })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load debts.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const summary = useMemo(() => {
     const lent = debts.filter((debt) => debt.type === "lent");
@@ -230,7 +205,7 @@ export default function Debts() {
     setFormOpen(true);
   }
 
-  function saveDebt() {
+  async function saveDebt() {
     const amount = Number(form.amount);
 
     if (!form.person.trim()) {
@@ -260,8 +235,7 @@ export default function Debts() {
       return;
     }
 
-    const updatedDebt: Debt = {
-      id: editingId ?? Date.now(),
+    const body = {
       person: form.person.trim(),
       type: form.type,
       amount,
@@ -271,18 +245,21 @@ export default function Debts() {
       note: form.note.trim(),
     };
 
-    if (editingId !== null) {
+    try {
+      const saved = editingId
+        ? await updateDebtRecord(editingId, body)
+        : await createDebtRecord(body);
+      const updatedDebt: Debt = { ...body, id: saved._id };
       setDebts((current) =>
-        current.map((debt) =>
-          debt.id === editingId ? updatedDebt : debt,
-        ),
+        editingId
+          ? current.map((debt) => (debt.id === editingId ? updatedDebt : debt))
+          : [updatedDebt, ...current],
       );
-    } else {
-      setDebts((current) => [updatedDebt, ...current]);
+      setFormOpen(false);
+      setFormError("");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save debt.");
     }
-
-    setFormOpen(false);
-    setFormError("");
   }
 
   function openRepaymentDialog(debt: Debt) {
@@ -292,7 +269,7 @@ export default function Debts() {
     setRepaymentOpen(true);
   }
 
-  function recordRepayment() {
+  async function recordRepayment() {
     const debt = debts.find((item) => item.id === selectedDebtId);
 
     if (!debt) return;
@@ -312,26 +289,30 @@ export default function Debts() {
       return;
     }
 
-    setDebts((current) =>
-      current.map((item) =>
-        item.id === debt.id
-          ? { ...item, paid: item.paid + amount }
-          : item,
-      ),
-    );
-
-    setRepaymentOpen(false);
-    setRepaymentError("");
+    try {
+      const updated = await updateDebtRecord(debt.id, { paid: debt.paid + amount });
+      setDebts((current) =>
+        current.map((item) =>
+          item.id === debt.id ? { ...item, paid: updated.paid } : item,
+        ),
+      );
+      setRepaymentOpen(false);
+      setRepaymentError("");
+    } catch (error) {
+      setRepaymentError(error instanceof Error ? error.message : "Unable to save repayment.");
+    }
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (deleteId === null) return;
 
-    setDebts((current) =>
-      current.filter((debt) => debt.id !== deleteId),
-    );
-
-    setDeleteId(null);
+    try {
+      await deleteDebtRecord(deleteId);
+      setDebts((current) => current.filter((debt) => debt.id !== deleteId));
+      setDeleteId(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to delete debt.");
+    }
   }
 
   function getDebtStatus(debt: Debt) {
@@ -366,6 +347,11 @@ export default function Debts() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Page header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
           <Button onClick={openCreateDialog}>

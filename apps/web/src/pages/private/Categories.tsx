@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -70,6 +70,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  createCategory,
+  deleteCategory as deleteCategoryRequest,
+  getAllTransactions,
+  getCategories,
+  updateCategory,
+  type Category as ApiCategory,
+  type Transaction,
+} from "@/lib/api-client";
 
 type CategoryType = "expense" | "income";
 
@@ -78,21 +87,14 @@ type Category = {
   name: string;
   type: CategoryType;
   icon: LucideIcon;
+  iconKey: string;
   description: string;
   transactions: number;
   amount: number;
 };
 
-const initialCategories: Category[] = [
-  {
-    id: "food",
-    name: "Food & Dining",
-    type: "expense",
-    icon: Utensils,
-    description: "Restaurants, meals and food",
-    transactions: 24,
-    amount: 4500,
-  },
+const initialCategories: Category[] = [];
+/*
   {
     id: "groceries",
     name: "Groceries",
@@ -264,7 +266,7 @@ const initialCategories: Category[] = [
     transactions: 0,
     amount: 0,
   },
-];
+*/
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -277,7 +279,9 @@ function formatCurrency(amount: number) {
 }
 
 export default function Categories() {
-  const [categories, setCategories] = useState(initialCategories);
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("expense");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -343,6 +347,43 @@ export default function Categories() {
     other: CircleDollarSign,
   };
 
+  async function loadCategories() {
+    try {
+      setLoadError("");
+      const [apiCategories, transactions] = await Promise.all([
+        getCategories(),
+        getAllTransactions(),
+      ]);
+      const icons = { ...expenseIcons, ...incomeIcons };
+      setCategories(apiCategories.map((category: ApiCategory) => {
+        const relatedTransactions = transactions.filter((transaction: Transaction) => {
+          const categoryId = typeof transaction.category === "string"
+            ? transaction.category
+            : transaction.category?._id;
+          return categoryId === category._id && transaction.status === "completed";
+        });
+        return {
+          id: category._id,
+          name: category.name,
+          type: category.type,
+          icon: icons[category.icon] ?? MoreHorizontal,
+          iconKey: category.icon,
+          description: category.description,
+          transactions: relatedTransactions.length,
+          amount: relatedTransactions.reduce((sum, item) => sum + item.amount, 0),
+        };
+      }));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load categories.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadCategories();
+  }, []);
+
   function openCreateDialog() {
     setEditingCategory(null);
     setName("");
@@ -356,12 +397,12 @@ export default function Categories() {
     setEditingCategory(category);
     setName(category.name);
     setDescription(category.description);
-    setIconName(category.id);
+    setIconName(category.iconKey);
     setFormError("");
     setDialogOpen(true);
   }
 
-  function handleSaveCategory(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSaveCategory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
 
@@ -389,44 +430,32 @@ export default function Categories() {
 
     const selectedIcon = iconMap[iconName] ?? MoreHorizontal;
 
-    if (editingCategory) {
-      setCategories((previous) =>
-        previous.map((category) =>
-          category.id === editingCategory.id
-            ? {
-                ...category,
-                name: trimmedName,
-                description: description.trim() || "Custom category",
-                icon: selectedIcon,
-              }
-            : category
-        )
-      );
-    } else {
-      const newCategory: Category = {
-        id: `${activeTab}-${Date.now()}`,
+    try {
+      const body = {
         name: trimmedName,
         type: activeTab as CategoryType,
-        icon: selectedIcon,
-        description: description.trim() || "Custom category",
-        transactions: 0,
-        amount: 0,
+        description: description.trim(),
+        icon: iconName,
       };
-
-      setCategories((previous) => [...previous, newCategory]);
+      if (editingCategory) await updateCategory(editingCategory.id, body);
+      else await createCategory(body);
+      await loadCategories();
+      setDialogOpen(false);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save category.");
     }
-
-    setDialogOpen(false);
   }
 
-  function handleDeleteCategory() {
+  async function handleDeleteCategory() {
     if (!deleteTarget) return;
-
-    setCategories((previous) =>
-      previous.filter((category) => category.id !== deleteTarget.id)
-    );
-
-    setDeleteTarget(null);
+    try {
+      await deleteCategoryRequest(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadCategories();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to delete category.");
+      setDeleteTarget(null);
+    }
   }
 
   const availableIcons =
@@ -467,6 +496,8 @@ export default function Categories() {
           </Button>
         </header>
 
+        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
+
         {/* Summary */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card className="gap-3 py-5 shadow-none">
@@ -496,7 +527,7 @@ export default function Categories() {
                 {expenseCategories.length}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {formatCurrency(expenseTotal)} in sample spending
+                {formatCurrency(expenseTotal)} recorded
               </p>
             </CardContent>
           </Card>
@@ -513,7 +544,7 @@ export default function Categories() {
                 {incomeCategories.length}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {formatCurrency(incomeTotal)} in sample income
+                {formatCurrency(incomeTotal)} recorded
               </p>
             </CardContent>
           </Card>
@@ -573,7 +604,9 @@ export default function Categories() {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6">
-            {filteredCategories.length > 0 ? (
+            {isLoading ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">Loading categories...</p>
+            ) : filteredCategories.length > 0 ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredCategories.map((category) => {
                   const Icon = category.icon;
@@ -783,7 +816,7 @@ export default function Categories() {
                   {deleteTarget?.name}
                 </span>
                 . This removes it from this page's category list. Existing
-                transaction history is not modified by this demo.
+                Categories with linked transactions cannot be deleted. Deactivate them instead.
               </DialogDescription>
             </DialogHeader>
 

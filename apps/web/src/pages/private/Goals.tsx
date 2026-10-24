@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -42,9 +42,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  createGoal as createGoalRecord,
+  deleteGoal as deleteGoalRecord,
+  getGoals,
+  updateGoal as updateGoalRecord,
+  type Goal as ApiGoal,
+} from "@/lib/api-client";
 
 type Goal = {
-  id: number;
+  id: string;
   name: string;
   category: string;
   target: number;
@@ -52,79 +59,6 @@ type Goal = {
   targetDate: string;
   description: string;
 };
-
-const today = new Date();
-
-function dateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function futureDate(months: number) {
-  const date = new Date();
-  date.setMonth(date.getMonth() + months);
-  return dateKey(date);
-}
-
-const initialGoals: Goal[] = [
-  {
-    id: 1,
-    name: "Emergency Fund",
-    category: "Savings",
-    target: 100000,
-    saved: 65000,
-    targetDate: futureDate(4),
-    description: "Build a financial safety net.",
-  },
-  {
-    id: 2,
-    name: "New Laptop",
-    category: "Technology",
-    target: 80000,
-    saved: 52000,
-    targetDate: futureDate(3),
-    description: "Save for a new development laptop.",
-  },
-  {
-    id: 3,
-    name: "Vacation",
-    category: "Travel",
-    target: 50000,
-    saved: 18000,
-    targetDate: futureDate(6),
-    description: "Plan a trip without financial stress.",
-  },
-  {
-    id: 4,
-    name: "Buy a Car",
-    category: "Vehicle",
-    target: 500000,
-    saved: 125000,
-    targetDate: futureDate(18),
-    description: "Save for a personal vehicle.",
-  },
-  {
-    id: 5,
-    name: "Home Down Payment",
-    category: "Home",
-    target: 1000000,
-    saved: 200000,
-    targetDate: futureDate(36),
-    description: "Build savings for a future home.",
-  },
-  {
-    id: 6,
-    name: "Professional Course",
-    category: "Education",
-    target: 30000,
-    saved: 30000,
-    targetDate: dateKey(today),
-    description: "Invest in professional development.",
-  },
-];
 
 const categoryOptions = [
   { value: "Savings", label: "Savings" },
@@ -173,21 +107,47 @@ const emptyForm = {
 };
 
 export default function Goals() {
-  const [goals, setGoals] = useState<Goal[]>(initialGoals);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
 
   const [contributionOpen, setContributionOpen] = useState(false);
-  const [selectedGoalId, setSelectedGoalId] = useState<number | null>(null);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [contribution, setContribution] = useState("");
   const [contributionError, setContributionError] = useState("");
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getGoals()
+      .then((records) => {
+        if (!active) return;
+        setGoals(
+          records.map((goal: ApiGoal) => ({
+            id: goal._id,
+            name: goal.name,
+            category: goal.category,
+            target: goal.target,
+            saved: goal.saved,
+            targetDate: goal.targetDate ?? "",
+            description: goal.description ?? "",
+          })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load goals.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const summary = useMemo(() => {
     const target = goals.reduce((sum, goal) => sum + goal.target, 0);
@@ -246,7 +206,7 @@ export default function Goals() {
     setDialogOpen(true);
   }
 
-  function saveGoal() {
+  async function saveGoal() {
     const target = Number(form.target);
     const saved = Number(form.saved);
 
@@ -270,8 +230,7 @@ export default function Goals() {
       return;
     }
 
-    const goal: Goal = {
-      id: editingId ?? Date.now(),
+    const body = {
       name: form.name.trim(),
       category: form.category,
       target,
@@ -280,16 +239,21 @@ export default function Goals() {
       description: form.description.trim(),
     };
 
-    if (editingId !== null) {
+    try {
+      const savedGoal = editingId
+        ? await updateGoalRecord(editingId, body)
+        : await createGoalRecord(body);
+      const goal: Goal = { ...body, id: savedGoal._id };
       setGoals((current) =>
-        current.map((item) => (item.id === editingId ? goal : item)),
+        editingId
+          ? current.map((item) => (item.id === editingId ? goal : item))
+          : [goal, ...current],
       );
-    } else {
-      setGoals((current) => [goal, ...current]);
+      setDialogOpen(false);
+      setFormError("");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save goal.");
     }
-
-    setDialogOpen(false);
-    setFormError("");
   }
 
   function openContributionDialog(goal: Goal) {
@@ -299,7 +263,7 @@ export default function Goals() {
     setContributionOpen(true);
   }
 
-  function addContribution() {
+  async function addContribution() {
     const amount = Number(contribution);
     const goal = goals.find((item) => item.id === selectedGoalId);
 
@@ -319,23 +283,30 @@ export default function Goals() {
       return;
     }
 
-    setGoals((current) =>
-      current.map((item) =>
-        item.id === goal.id
-          ? { ...item, saved: item.saved + amount }
-          : item,
-      ),
-    );
-
-    setContributionOpen(false);
-    setContributionError("");
+    try {
+      const updated = await updateGoalRecord(goal.id, { saved: goal.saved + amount });
+      setGoals((current) =>
+        current.map((item) =>
+          item.id === goal.id ? { ...item, saved: updated.saved } : item,
+        ),
+      );
+      setContributionOpen(false);
+      setContributionError("");
+    } catch (error) {
+      setContributionError(error instanceof Error ? error.message : "Unable to save contribution.");
+    }
   }
 
-  function deleteGoal() {
+  async function deleteGoal() {
     if (deleteId === null) return;
 
-    setGoals((current) => current.filter((goal) => goal.id !== deleteId));
-    setDeleteId(null);
+    try {
+      await deleteGoalRecord(deleteId);
+      setGoals((current) => current.filter((goal) => goal.id !== deleteId));
+      setDeleteId(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to delete goal.");
+    }
   }
 
   const selectedGoal = goals.find((goal) => goal.id === selectedGoalId);
@@ -344,6 +315,11 @@ export default function Goals() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
           <Button onClick={openCreateDialog}>

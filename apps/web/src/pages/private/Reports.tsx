@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Download,
@@ -18,11 +18,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getAllTransactions, type Transaction as ApiTransaction } from "@/lib/api-client";
 
 type TransactionType = "income" | "expense";
 
 type Transaction = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   type: TransactionType;
@@ -41,24 +42,6 @@ function dateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function monthDate(monthOffset: number, day: number) {
-  const date = new Date(
-    today.getFullYear(),
-    today.getMonth() + monthOffset,
-    1,
-  );
-
-  const lastDay = new Date(
-    date.getFullYear(),
-    date.getMonth() + 1,
-    0,
-  ).getDate();
-
-  date.setDate(Math.min(day, lastDay));
-
-  return dateKey(date);
-}
-
 const monthNames = Array.from({ length: 6 }, (_, index) => {
   const date = new Date(
     today.getFullYear(),
@@ -75,92 +58,6 @@ const monthNames = Array.from({ length: 6 }, (_, index) => {
     }).format(date),
   };
 });
-
-const transactionTemplates = [
-  {
-    title: "Monthly Salary",
-    category: "Salary",
-    type: "income" as const,
-    amount: 45000,
-    day: 1,
-    account: "HDFC Bank",
-  },
-  {
-    title: "Freelance Project",
-    category: "Freelance",
-    type: "income" as const,
-    amount: 8000,
-    day: 12,
-    account: "HDFC Bank",
-  },
-  {
-    title: "House Rent",
-    category: "Housing",
-    type: "expense" as const,
-    amount: 12000,
-    day: 3,
-    account: "HDFC Bank",
-  },
-  {
-    title: "Groceries",
-    category: "Food",
-    type: "expense" as const,
-    amount: 3200,
-    day: 7,
-    account: "Cash",
-  },
-  {
-    title: "Transport",
-    category: "Transport",
-    type: "expense" as const,
-    amount: 1800,
-    day: 10,
-    account: "Cash",
-  },
-  {
-    title: "Electricity Bill",
-    category: "Bills",
-    type: "expense" as const,
-    amount: 1500,
-    day: 15,
-    account: "HDFC Bank",
-  },
-  {
-    title: "Shopping",
-    category: "Shopping",
-    type: "expense" as const,
-    amount: 2400,
-    day: 19,
-    account: "HDFC Bank",
-  },
-  {
-    title: "Food & Dining",
-    category: "Food",
-    type: "expense" as const,
-    amount: 1200,
-    day: 23,
-    account: "Cash",
-  },
-];
-
-const initialTransactions: Transaction[] = Array.from(
-  { length: 6 },
-  (_, index) => {
-    const monthOffset = index - 5;
-
-    return transactionTemplates.map((template, templateIndex) => ({
-      id: index * transactionTemplates.length + templateIndex + 1,
-      title: template.title,
-      category: template.category,
-      type: template.type,
-      amount:
-        template.amount +
-        ((index * 317 + templateIndex * 113) % 700),
-      date: monthDate(monthOffset, template.day),
-      account: template.account,
-    }));
-  },
-).flat();
 
 const currency = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -226,11 +123,49 @@ function getRangeStart(range: string) {
 export default function Reports() {
   const [range, setRange] = useState("6months");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getAllTransactions()
+      .then((records) => {
+        if (!active) return;
+        setTransactions(
+          records
+            .filter(
+              (record): record is ApiTransaction & { type: "income" | "expense" } =>
+                record.status === "completed" && record.type !== "transfer",
+            )
+            .map((record) => ({
+              id: record._id,
+              title: record.description || record.type,
+              category:
+                typeof record.category === "object" && record.category
+                  ? record.category.name
+                  : "Uncategorized",
+              type: record.type,
+              amount: record.amount,
+              date: record.date.slice(0, 10),
+              account:
+                typeof record.account === "object"
+                  ? record.account.name
+                  : "Account",
+            })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load reports.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredTransactions = useMemo(() => {
     const startDate = getRangeStart(range);
 
-    return initialTransactions.filter((transaction) => {
+    return transactions.filter((transaction) => {
       const matchesDate =
         !startDate || transaction.date >= startDate;
 
@@ -239,7 +174,7 @@ export default function Reports() {
 
       return matchesDate && matchesType;
     });
-  }, [range, typeFilter]);
+  }, [transactions, range, typeFilter]);
 
   const summary = useMemo(() => {
     const income = filteredTransactions
@@ -376,6 +311,11 @@ export default function Reports() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
+        {loadError && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {/* Header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
           <Button variant="outline" onClick={exportCSV}>

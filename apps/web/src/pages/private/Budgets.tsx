@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -39,37 +39,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  createBudget,
+  deleteBudget,
+  getAllTransactions,
+  getBudgets,
+  updateBudget,
+  type Budget as ApiBudget,
+  getCategories,
+  type Category as ApiCategory,
+  type Transaction,
+} from "@/lib/api-client";
 
 type Budget = {
-  id: number;
+  id: string;
   name: string;
   category: string;
+  categoryId?: string;
   limit: number;
   spent: number;
   period: "Monthly" | "Weekly" | "Yearly";
 };
-
-const initialBudgets: Budget[] = [
-  { id: 1, name: "Food & Dining", category: "Food", limit: 8000, spent: 5600, period: "Monthly" },
-  { id: 2, name: "Transportation", category: "Transport", limit: 3000, spent: 1850, period: "Monthly" },
-  { id: 3, name: "Shopping", category: "Shopping", limit: 5000, spent: 4200, period: "Monthly" },
-  { id: 4, name: "Home & Utilities", category: "Housing", limit: 10000, spent: 7200, period: "Monthly" },
-  { id: 5, name: "Healthcare", category: "Health", limit: 3000, spent: 900, period: "Monthly" },
-  { id: 6, name: "Education", category: "Education", limit: 4000, spent: 4000, period: "Monthly" },
-  { id: 7, name: "Travel", category: "Travel", limit: 6000, spent: 1200, period: "Monthly" },
-  { id: 8, name: "Other Expenses", category: "Other", limit: 2500, spent: 600, period: "Monthly" },
-];
-
-const categoryOptions = [
-  { value: "Food", label: "Food & Dining" },
-  { value: "Transport", label: "Transportation" },
-  { value: "Shopping", label: "Shopping" },
-  { value: "Housing", label: "Home & Utilities" },
-  { value: "Health", label: "Healthcare" },
-  { value: "Education", label: "Education" },
-  { value: "Travel", label: "Travel" },
-  { value: "Other", label: "Other Expenses" },
-];
 
 const categoryIcons: Record<string, typeof Wallet> = {
   Food: Utensils,
@@ -94,21 +84,85 @@ const currentMonth = new Intl.DateTimeFormat("en-IN", {
   year: "numeric",
 }).format(new Date());
 
+function getPeriodStart(period: Budget["period"]) {
+  const start = new Date();
+  if (period === "Yearly") {
+    start.setMonth(0, 1);
+  } else if (period === "Monthly") {
+    start.setDate(1);
+  } else {
+    const daysSinceMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday);
+  }
+  return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+}
+
 const emptyForm = {
   name: "",
-  category: "Food",
+  category: "",
   limit: "",
   period: "Monthly" as Budget["period"],
 };
 
 export default function Budgets() {
-  const [budgets, setBudgets] = useState(initialBudgets);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getBudgets(), getAllTransactions(), getCategories({ type: "expense", isActive: true })])
+      .then(([records, transactions, activeCategories]) => {
+        if (!active) return;
+        setBudgets(
+          records.map((budget: ApiBudget) => {
+            const periodStart = getPeriodStart(budget.period);
+            const spent = transactions
+              .filter((transaction: Transaction) => {
+                const transactionCategory =
+                  typeof transaction.category === "object" && transaction.category
+                    ? transaction.category
+                    : null;
+                if (
+                  transaction.status !== "completed" ||
+                  transaction.type !== "expense" ||
+                  transaction.date.slice(0, 10) < periodStart ||
+                  transaction.date.slice(0, 10) > new Date().toISOString().slice(0, 10)
+                ) {
+                  return false;
+                }
+                return budget.categoryId
+                  ? transactionCategory?._id === budget.categoryId
+                  : transactionCategory?.name === budget.category ||
+                      transaction.category === budget.category;
+              })
+              .reduce((sum, transaction) => sum + transaction.amount, 0);
+            return {
+              id: budget._id,
+              name: budget.name,
+              category: budget.category,
+              categoryId: budget.categoryId,
+              limit: budget.limit,
+              spent,
+              period: budget.period,
+            };
+          }),
+        );
+        setCategories(activeCategories);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setLoadError(loadError instanceof Error ? loadError.message : "Unable to load budgets.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const totals = useMemo(() => {
     const limit = budgets.reduce((sum, budget) => sum + budget.limit, 0);
@@ -145,7 +199,7 @@ export default function Budgets() {
 
   function openCreateDialog() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, category: categories[0]?.name ?? "" });
     setError("");
     setDialogOpen(true);
   }
@@ -162,7 +216,7 @@ export default function Budgets() {
     setDialogOpen(true);
   }
 
-  function saveBudget() {
+  async function saveBudget() {
     const limit = Number(form.limit);
 
     if (!form.name.trim()) {
@@ -187,40 +241,45 @@ export default function Budgets() {
       return;
     }
 
-    if (editingId !== null) {
-      setBudgets((current) =>
-        current.map((budget) =>
-          budget.id === editingId
-            ? {
-                ...budget,
-                name: form.name.trim(),
-                category: form.category,
-                limit,
-                period: form.period,
-              }
-            : budget,
-        ),
-      );
-    } else {
-      setBudgets((current) => [
-        ...current,
-        {
-          id: Date.now(),
-          name: form.name.trim(),
-          category: form.category,
-          limit,
-          spent: 0,
-          period: form.period,
-        },
-      ]);
+    try {
+      const body = {
+        name: form.name.trim(),
+        category: form.category,
+        categoryId: categories.find((category) => category.name === form.category)?._id,
+        limit,
+        period: form.period,
+      };
+      const saved = editingId
+        ? await updateBudget(editingId, body)
+        : await createBudget(body);
+      setBudgets((current) => {
+        const next: Budget = {
+          id: saved._id,
+          name: saved.name,
+          category: saved.category,
+          categoryId: saved.categoryId,
+          limit: saved.limit,
+          spent: current.find((budget) => budget.id === saved._id)?.spent ?? 0,
+          period: saved.period,
+        };
+        return editingId
+          ? current.map((budget) => (budget.id === editingId ? next : budget))
+          : [next, ...current];
+      });
+      setDialogOpen(false);
+      setError("");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save budget.");
     }
-
-    setDialogOpen(false);
-    setError("");
   }
 
-  function deleteBudget(id: number) {
-    setBudgets((current) => current.filter((budget) => budget.id !== id));
+  async function removeBudget(id: string) {
+    try {
+      await deleteBudget(id);
+      setBudgets((current) => current.filter((budget) => budget.id !== id));
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete budget.");
+    }
   }
 
   function getStatus(budget: Budget) {
@@ -247,6 +306,11 @@ export default function Budgets() {
   return (
     <main className="min-h-screen bg-muted/20 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {(loadError || error) && (
+          <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+            {error || loadError}
+          </p>
+        )}
         {/* Header */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
           <Button onClick={openCreateDialog}>
@@ -459,7 +523,7 @@ export default function Budgets() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => deleteBudget(budget.id)}
+                              onClick={() => removeBudget(budget.id)}
                             >
                               <Trash2 className="mr-2 size-4" />
                               Delete budget
@@ -572,9 +636,10 @@ export default function Budgets() {
                 }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
-                {categoryOptions.map((category) => (
-                  <option key={category.value} value={category.value}>
-                    {category.label}
+                <option value="">Uncategorized</option>
+                {categories.map((category) => (
+                  <option key={category._id} value={category.name}>
+                    {category.name}
                   </option>
                 ))}
               </select>

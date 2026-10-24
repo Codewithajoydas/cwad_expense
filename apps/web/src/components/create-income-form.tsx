@@ -27,37 +27,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { createTransaction } from "@/lib/api-client";
+import { useFinanceOptions } from "@/lib/use-finance-options";
 
-const incomeSources = [
-  { id: "salary", label: "Salary", icon: BriefcaseBusiness },
-  { id: "freelance", label: "Freelancing", icon: Laptop },
-  { id: "business", label: "Business", icon: Building2 },
-  { id: "investment", label: "Investments", icon: TrendingUp },
-  { id: "rental", label: "Rental Income", icon: House },
-  { id: "interest", label: "Interest", icon: Landmark },
-  { id: "bonus", label: "Bonus", icon: CircleDollarSign },
-  { id: "gift", label: "Gift", icon: Gift },
-  { id: "refund", label: "Refund", icon: HandCoins },
-  { id: "cash", label: "Cash Income", icon: Banknote },
-  { id: "other", label: "Other", icon: MoreHorizontal },
-];
-
-const accounts = [
-  { value: "cash", label: "Cash Wallet" },
-  { value: "bank", label: "Bank Account" },
-  { value: "savings", label: "Savings Account" },
-];
+const incomeIcons: Record<string, typeof BriefcaseBusiness> = {
+  salary: BriefcaseBusiness,
+  freelance: Laptop,
+  business: Building2,
+  investment: TrendingUp,
+  rental: House,
+  interest: Landmark,
+  gift: Gift,
+  refund: HandCoins,
+  other: CircleDollarSign,
+};
 
 export default function CreateIncomeForm() {
-  const [source, setSource] = useState("salary");
+  const { accounts, categories, isLoading: isLoadingOptions, error: optionsError } = useFinanceOptions("income");
+  const [source, setSource] = useState("");
   const [account, setAccount] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toLocaleDateString("en-CA"));
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const formData = new FormData(event.currentTarget);
+    setError("");
+    setSuccess("");
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
 
     const income = {
       title: String(formData.get("title") ?? "").trim(),
@@ -73,13 +73,35 @@ export default function CreateIncomeForm() {
       !Number.isFinite(income.amount) ||
       income.amount <= 0 ||
       !income.account ||
-      !income.date
+      !income.date ||
+      !income.source
     ) {
+      setError("Enter an amount and select an income category, account, and date.");
       return;
     }
 
-    // TODO: Send income to your API.
-    console.log("Income:", income);
+    try {
+      setIsSubmitting(true);
+      await createTransaction({
+        type: "income",
+        amount: income.amount,
+        description: income.title,
+        category: income.source,
+        account: income.account,
+        date: income.date,
+        notes: income.notes,
+        status: "completed",
+      });
+      setSuccess("Income saved successfully.");
+      setAmount("");
+      setSource("");
+      setAccount("");
+      formElement.reset();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save income.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -135,20 +157,20 @@ export default function CreateIncomeForm() {
           </div>
 
           <span className="shrink-0 text-xs text-muted-foreground">
-            {incomeSources.length} sources
+            {isLoadingOptions ? "Loading categories..." : `${categories.length} categories`}
           </span>
         </div>
 
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {incomeSources.map((item) => {
-            const Icon = item.icon;
-            const selected = source === item.id;
+          {categories.map((item) => {
+            const Icon = incomeIcons[item.icon] ?? MoreHorizontal;
+            const selected = source === item._id;
 
             return (
               <button
-                key={item.id}
+                key={item._id}
                 type="button"
-                onClick={() => setSource(item.id)}
+                onClick={() => setSource(item._id)}
                 aria-pressed={selected}
                 className={`flex min-h-22 flex-col items-center justify-center gap-2 rounded-lg border p-2 text-center transition-colors ${
                   selected
@@ -158,7 +180,7 @@ export default function CreateIncomeForm() {
               >
                 <Icon className={`size-5 ${selected ? "text-primary" : ""}`} strokeWidth={1.8} />
 
-                <span className="text-xs font-medium leading-tight">{item.label}</span>
+                <span className="text-xs font-medium leading-tight">{item.name}</span>
               </button>
             );
           })}
@@ -178,8 +200,8 @@ export default function CreateIncomeForm() {
 
             <SelectContent>
               {accounts.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
+                <SelectItem key={item._id} value={item._id}>
+                  {item.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -221,14 +243,15 @@ export default function CreateIncomeForm() {
       </section>
 
       {/* Submit */}
+      {(optionsError || error) && <p role="alert" className="text-sm text-destructive">{optionsError || error}</p>}
+      {success && <p role="status" className="text-sm text-green-700">{success}</p>}
       <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">
           Verify the amount and account before saving.
         </p>
 
-        <Button type="submit" className="h-11 w-full sm:w-auto">
-          <Plus className="mr-2 size-4" />
-          Save income
+        <Button type="submit" disabled={isSubmitting || isLoadingOptions} className="h-11 w-full sm:w-auto">
+          {isSubmitting ? "Saving..." : <><Plus className="mr-2 size-4" />Save income</>}
         </Button>
       </div>
     </form>

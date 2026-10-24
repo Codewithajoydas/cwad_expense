@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Bell,
   Check,
@@ -20,6 +20,12 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  deleteNotification,
+  getNotifications,
+  updateNotification,
+  type Notification as ApiNotification,
+} from "@/lib/api-client";
 
 type NotificationType =
   | "expense"
@@ -29,70 +35,13 @@ type NotificationType =
   | "system";
 
 type NotificationItem = {
-  id: number;
+  id: string | number;
   title: string;
   description: string;
   time: string;
   type: NotificationType;
   read: boolean;
 };
-
-const initialNotifications: NotificationItem[] = [
-  {
-    id: 1,
-    title: "Budget limit almost reached",
-    description:
-      "You have used 85% of your monthly Food & Dining budget.",
-    time: "10 minutes ago",
-    type: "budget",
-    read: false,
-  },
-  {
-    id: 2,
-    title: "Expense added successfully",
-    description:
-      "Your expense of ₹1,250 for groceries has been recorded.",
-    time: "1 hour ago",
-    type: "expense",
-    read: false,
-  },
-  {
-    id: 3,
-    title: "Savings goal updated",
-    description:
-      "You are making progress toward your new laptop savings goal.",
-    time: "3 hours ago",
-    type: "goal",
-    read: false,
-  },
-  {
-    id: 4,
-    title: "Recurring payment reminder",
-    description:
-      "Your monthly internet bill of ₹799 is due tomorrow.",
-    time: "Yesterday",
-    type: "account",
-    read: true,
-  },
-  {
-    id: 5,
-    title: "Monthly report is ready",
-    description:
-      "Your expense summary for this month is available to review.",
-    time: "Yesterday",
-    type: "system",
-    read: true,
-  },
-  {
-    id: 6,
-    title: "Budget updated",
-    description:
-      "Your monthly Shopping budget has been updated successfully.",
-    time: "2 days ago",
-    type: "budget",
-    read: true,
-  },
-];
 
 const notificationIcons: Record<
   NotificationType,
@@ -110,11 +59,35 @@ const filters = ["All", "Unread", "Read"] as const;
 type FilterType = (typeof filters)[number];
 
 export default function Notifications() {
-  const [notifications, setNotifications] =
-    useState<NotificationItem[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   const [activeFilter, setActiveFilter] =
     useState<FilterType>("All");
+
+  async function loadNotifications() {
+    try {
+      setError("");
+      const records = await getNotifications();
+      setNotifications(records.map((record: ApiNotification) => ({
+        id: record._id,
+        title: record.title,
+        description: record.description,
+        time: record.time,
+        type: record.type,
+        read: record.read,
+      })));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load notifications.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadNotifications();
+  }, []);
 
   const unreadCount = notifications.filter(
     (notification) => !notification.read
@@ -134,32 +107,38 @@ export default function Notifications() {
     }
   );
 
-  function markAsRead(id: number) {
-    setNotifications((current) =>
-      current.map((notification) =>
-        notification.id === id
-          ? { ...notification, read: true }
-          : notification
-      )
-    );
+  async function markAsRead(id: string) {
+    try {
+      await updateNotification(id, { read: true });
+      await loadNotifications();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update notification.");
+    }
   }
 
-  function markAllAsRead() {
-    setNotifications((current) =>
-      current.map((notification) => ({
-        ...notification,
-        read: true,
-      }))
-    );
+  async function markAllAsRead() {
+    try {
+      await Promise.all(notifications.filter((item) => !item.read).map((item) => updateNotification(String(item.id), { read: true })));
+      await loadNotifications();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to mark notifications as read.");
+    }
   }
 
-  function removeAllNotifications() {
-    setNotifications([]);
+  async function removeAllNotifications() {
+    try {
+      await Promise.all(notifications.map((item) => deleteNotification(String(item.id))));
+      await loadNotifications();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to clear notifications.");
+    }
   }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Page Header */}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {isLoading && <p role="status" className="text-sm text-muted-foreground">Loading notifications...</p>}
       <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
         <div className="flex flex-wrap gap-2">
           <Button
@@ -319,7 +298,7 @@ export default function Notifications() {
                                 size="sm"
                                 className="h-7 px-2"
                                 onClick={() =>
-                                  markAsRead(notification.id)
+                                  markAsRead(String(notification.id))
                                 }
                               >
                                 <Check className="mr-1 h-3.5 w-3.5" />

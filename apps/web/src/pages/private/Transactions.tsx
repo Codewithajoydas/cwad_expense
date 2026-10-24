@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowDownRight,
@@ -35,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getAllTransactions, type Transaction as ApiTransaction } from "@/lib/api-client";
 
 type TransactionType = "income" | "expense" | "transfer";
 
@@ -42,104 +43,13 @@ type Transaction = {
   id: string;
   title: string;
   category: string;
+  categoryId: string;
   account: string;
+  accountId: string;
   date: string;
   amount: number;
   type: TransactionType;
 };
-
-const initialTransactions: Transaction[] = [
-  {
-    id: "TXN-001",
-    title: "Monthly Salary",
-    category: "Salary",
-    account: "Bank Account",
-    date: "2026-10-23",
-    amount: 45000,
-    type: "income",
-  },
-  {
-    id: "TXN-002",
-    title: "Grocery Shopping",
-    category: "Groceries",
-    account: "Cash Wallet",
-    date: "2026-10-23",
-    amount: 1250,
-    type: "expense",
-  },
-  {
-    id: "TXN-003",
-    title: "Electricity Bill",
-    category: "Utilities",
-    account: "Bank Account",
-    date: "2026-10-22",
-    amount: 1850,
-    type: "expense",
-  },
-  {
-    id: "TXN-004",
-    title: "Freelance Project",
-    category: "Freelancing",
-    account: "Bank Account",
-    date: "2026-10-21",
-    amount: 12000,
-    type: "income",
-  },
-  {
-    id: "TXN-005",
-    title: "House Rent",
-    category: "Housing",
-    account: "Bank Account",
-    date: "2026-10-20",
-    amount: 10000,
-    type: "expense",
-  },
-  {
-    id: "TXN-006",
-    title: "Savings Transfer",
-    category: "Transfer",
-    account: "Cash Wallet → Savings Account",
-    date: "2026-10-19",
-    amount: 5000,
-    type: "transfer",
-  },
-  {
-    id: "TXN-007",
-    title: "Restaurant",
-    category: "Food & Dining",
-    account: "Cash Wallet",
-    date: "2026-10-18",
-    amount: 650,
-    type: "expense",
-  },
-  {
-    id: "TXN-008",
-    title: "Investment Return",
-    category: "Investment",
-    account: "Savings Account",
-    date: "2026-10-17",
-    amount: 2500,
-    type: "income",
-  },
-  {
-    id: "TXN-009",
-    title: "Internet Bill",
-    category: "Utilities",
-    account: "Bank Account",
-    date: "2026-10-15",
-    amount: 799,
-    type: "expense",
-  },
-  {
-    id: "TXN-010",
-    title: "Shopping",
-    category: "Shopping",
-    account: "Cash Wallet",
-    date: "2026-10-12",
-    amount: 2200,
-    type: "expense",
-  },
-];
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -177,7 +87,9 @@ const typeConfig = {
 };
 
 export default function Transactions() {
-  const [transactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
   const [category, setCategory] = useState("all");
@@ -189,13 +101,44 @@ export default function Transactions() {
 
   const pageSize = 6;
 
+  async function loadTransactions() {
+    try {
+      setLoadError("");
+      const records = await getAllTransactions();
+      setTransactions(records.map((record: ApiTransaction) => {
+        const fromAccount = typeof record.account === "string" ? record.account : record.account.name;
+        const toAccount = typeof record.toAccount === "string" ? record.toAccount : record.toAccount?.name;
+        const categoryName = typeof record.category === "string" ? record.category : record.category?.name ?? "";
+        return {
+          id: record._id,
+          title: record.description || "Transaction",
+          category: categoryName || (record.type === "transfer" ? "Transfer" : "Uncategorized"),
+          categoryId: typeof record.category === "string" ? record.category : record.category?._id ?? "",
+          account: record.type === "transfer" && toAccount ? `${fromAccount} → ${toAccount}` : fromAccount,
+          accountId: typeof record.account === "string" ? record.account : record.account._id,
+          date: record.date.slice(0, 10),
+          amount: record.amount,
+          type: record.type,
+        };
+      }));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load transactions.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadTransactions();
+  }, []);
+
   const categories = useMemo(
-    () => [...new Set(transactions.map((item) => item.category))].sort(),
+    () => [...new Map(transactions.filter((item) => item.categoryId).map((item) => [item.categoryId, item.category])).entries()],
     [transactions]
   );
 
   const accounts = useMemo(
-    () => [...new Set(transactions.map((item) => item.account))].sort(),
+    () => [...new Map(transactions.map((item) => [item.accountId, item.account])).entries()],
     [transactions]
   );
 
@@ -213,9 +156,9 @@ export default function Transactions() {
 
       const matchesType = type === "all" || item.type === type;
       const matchesCategory =
-        category === "all" || item.category === category;
+        category === "all" || item.categoryId === category;
       const matchesAccount =
-        account === "all" || item.account === account;
+        account === "all" || item.accountId === account;
       const matchesStartDate = !startDate || item.date >= startDate;
       const matchesEndDate = !endDate || item.date <= endDate;
 
@@ -343,6 +286,8 @@ export default function Transactions() {
             </Button>
           </div>
         </header>
+
+        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
 
         {/* Summary */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -484,9 +429,9 @@ export default function Transactions() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All categories</SelectItem>
-                      {categories.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
+                      {categories.map(([id, name]) => (
+                        <SelectItem key={id} value={id}>
+                          {name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -507,9 +452,9 @@ export default function Transactions() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All accounts</SelectItem>
-                      {accounts.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
+                      {accounts.map(([id, name]) => (
+                        <SelectItem key={id} value={id}>
+                          {name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -584,7 +529,9 @@ export default function Transactions() {
                 </thead>
 
                 <tbody>
-                  {visibleTransactions.map((item) => {
+                  {isLoading ? (
+                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Loading transactions...</td></tr>
+                  ) : visibleTransactions.map((item) => {
                     const config = typeConfig[item.type];
                     const Icon = config.icon;
 

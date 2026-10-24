@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Wallet,
   Landmark,
@@ -47,8 +47,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-type AccountType = "cash" | "bank" | "savings" | "credit";
+import {
+  createAccount,
+  deleteAccount as deleteAccountRequest,
+  getAccounts,
+  updateAccount,
+  type Account as ApiAccount,
+  type AccountType,
+} from "@/lib/api-client";
 
 type Account = {
   id: string;
@@ -59,50 +65,20 @@ type Account = {
   currency: string;
   accountNumber: string;
   active: boolean;
+  isDefault: boolean;
 };
 
-const initialAccounts: Account[] = [
-  {
-    id: "ACC-001",
-    name: "Cash Wallet",
-    type: "cash",
-    institution: "Physical Cash",
-    balance: 5000,
-    currency: "INR",
-    accountNumber: "CASH-001",
-    active: true,
-  },
-  {
-    id: "ACC-002",
-    name: "Primary Bank Account",
-    type: "bank",
-    institution: "HDFC Bank",
-    balance: 95000,
-    currency: "INR",
-    accountNumber: "•••• 4582",
-    active: true,
-  },
-  {
-    id: "ACC-003",
-    name: "Savings Account",
-    type: "savings",
-    institution: "SBI",
-    balance: 25000,
-    currency: "INR",
-    accountNumber: "•••• 7821",
-    active: true,
-  },
-  {
-    id: "ACC-004",
-    name: "Credit Card",
-    type: "credit",
-    institution: "ICICI Bank",
-    balance: -3500,
-    currency: "INR",
-    accountNumber: "•••• 9034",
-    active: true,
-  },
-];
+const fromApiAccount = (account: ApiAccount): Account => ({
+  id: account._id,
+  name: account.name,
+  type: account.type,
+  institution: account.institution || "Personal",
+  balance: account.currentBalance,
+  currency: account.currency,
+  accountNumber: account.accountNumber || "Not provided",
+  active: account.isActive,
+  isDefault: account.isDefault,
+});
 
 const accountTypeOptions: {
   value: AccountType;
@@ -111,14 +87,20 @@ const accountTypeOptions: {
   { value: "cash", label: "Cash" },
   { value: "bank", label: "Bank account" },
   { value: "savings", label: "Savings account" },
-  { value: "credit", label: "Credit card" },
+  { value: "credit_card", label: "Credit card" },
+  { value: "wallet", label: "Wallet" },
+  { value: "investment", label: "Investment" },
+  { value: "other", label: "Other" },
 ];
 
 const accountTypeConfig: Record<AccountType, { label: string; icon: typeof Wallet }> = {
   cash: { label: "Cash", icon: Banknote },
   bank: { label: "Bank account", icon: Landmark },
   savings: { label: "Savings", icon: PiggyBank },
-  credit: { label: "Credit card", icon: CreditCard },
+  credit_card: { label: "Credit card", icon: CreditCard },
+  wallet: { label: "Wallet", icon: Wallet },
+  investment: { label: "Investment", icon: CircleDollarSign },
+  other: { label: "Other", icon: Building2 },
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
@@ -132,7 +114,10 @@ function formatCurrency(amount: number) {
 }
 
 export default function Accounts() {
-  const [accounts, setAccounts] = useState(initialAccounts);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [showBalances, setShowBalances] = useState(true);
@@ -148,6 +133,21 @@ export default function Accounts() {
   const [balance, setBalance] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
 
+  async function loadAccounts() {
+    try {
+      setLoadError("");
+      setAccounts((await getAccounts()).map(fromApiAccount));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load accounts.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAccounts();
+  }, []);
+
   const filteredAccounts = useMemo(() => {
     return accounts.filter((account) => {
       const matchesSearch = [account.name, account.institution, account.accountNumber]
@@ -162,11 +162,11 @@ export default function Accounts() {
   }, [accounts, search, filterType]);
 
   const totalAssets = accounts
-    .filter((account) => account.type !== "credit" && account.active)
+    .filter((account) => account.type !== "credit_card" && account.active)
     .reduce((sum, account) => sum + account.balance, 0);
 
   const totalLiabilities = accounts
-    .filter((account) => account.type === "credit" && account.active)
+    .filter((account) => account.type === "credit_card" && account.active)
     .reduce((sum, account) => sum + Math.abs(account.balance), 0);
 
   const netWorth = totalAssets - totalLiabilities;
@@ -193,13 +193,13 @@ export default function Accounts() {
     setName(account.name);
     setType(account.type);
     setInstitution(account.institution);
-    setBalance(String(account.balance));
+    setBalance("");
     setAccountNumber(account.accountNumber);
     setFormError("");
     setDialogOpen(true);
   }
 
-  function handleSaveAccount(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSaveAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
 
@@ -212,7 +212,7 @@ export default function Accounts() {
       return;
     }
 
-    if (!Number.isFinite(numericBalance)) {
+    if (!editingAccount && !Number.isFinite(numericBalance)) {
       setFormError("Please enter a valid account balance.");
       return;
     }
@@ -228,64 +228,53 @@ export default function Accounts() {
       return;
     }
 
-    if (type === "credit" && numericBalance > 0) {
-      setFormError("Enter the outstanding credit card amount as a negative number.");
-      return;
+    setIsSaving(true);
+    try {
+      if (editingAccount) {
+        await updateAccount(editingAccount.id, {
+          name: trimmedName,
+          type,
+          institution: trimmedInstitution,
+          accountNumber: accountNumber.trim() || null,
+        });
+      } else {
+        await createAccount({
+          name: trimmedName,
+          type,
+          openingBalance: numericBalance,
+          institution: trimmedInstitution,
+          accountNumber: accountNumber.trim() || null,
+        });
+      }
+      await loadAccounts();
+      setDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save account.");
+    } finally {
+      setIsSaving(false);
     }
-
-    if (type !== "credit" && numericBalance < 0) {
-      setFormError("Account balance cannot be negative for this account type.");
-      return;
-    }
-
-    if (editingAccount) {
-      setAccounts((previous) =>
-        previous.map((account) =>
-          account.id === editingAccount.id
-            ? {
-                ...account,
-                name: trimmedName,
-                type,
-                institution: trimmedInstitution || "Personal",
-                balance: numericBalance,
-                accountNumber: accountNumber.trim() || "Not provided",
-              }
-            : account,
-        ),
-      );
-    } else {
-      const newAccount: Account = {
-        id: `ACC-${Date.now()}`,
-        name: trimmedName,
-        type,
-        institution: trimmedInstitution || "Personal",
-        balance: numericBalance,
-        currency: "INR",
-        accountNumber: accountNumber.trim() || "Not provided",
-        active: true,
-      };
-
-      setAccounts((previous) => [...previous, newAccount]);
-    }
-
-    setDialogOpen(false);
-    resetForm();
   }
 
-  function handleDeleteAccount() {
+  async function handleDeleteAccount() {
     if (!deleteTarget) return;
-
-    setAccounts((previous) => previous.filter((account) => account.id !== deleteTarget.id));
-
-    setDeleteTarget(null);
+    try {
+      await deleteAccountRequest(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadAccounts();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to delete account.");
+      setDeleteTarget(null);
+    }
   }
 
-  function toggleAccountStatus(id: string) {
-    setAccounts((previous) =>
-      previous.map((account) =>
-        account.id === id ? { ...account, active: !account.active } : account,
-      ),
-    );
+  async function toggleAccountStatus(account: Account) {
+    try {
+      await updateAccount(account.id, { isActive: !account.active });
+      await loadAccounts();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to update account.");
+    }
   }
 
   function displayBalance(amount: number) {
@@ -310,6 +299,12 @@ export default function Accounts() {
             </Button>
           </div>
         </header>
+
+        {loadError && (
+          <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
 
         {/* Summary Cards */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -407,7 +402,9 @@ export default function Accounts() {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6">
-            {filteredAccounts.length > 0 ? (
+            {isLoading ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">Loading accounts...</p>
+            ) : filteredAccounts.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {filteredAccounts.map((account) => {
                   const config = accountTypeConfig[account.type];
@@ -452,7 +449,7 @@ export default function Accounts() {
                               Edit account
                             </DropdownMenuItem>
 
-                            <DropdownMenuItem onClick={() => toggleAccountStatus(account.id)}>
+                            <DropdownMenuItem onClick={() => void toggleAccountStatus(account)}>
                               {account.active ? "Deactivate account" : "Activate account"}
                             </DropdownMenuItem>
 
@@ -473,7 +470,7 @@ export default function Accounts() {
                         <div className="flex items-end justify-between gap-3">
                           <div>
                             <p className="text-xs text-muted-foreground">
-                              {account.type === "credit"
+                              {account.type === "credit_card"
                                 ? "Outstanding balance"
                                 : "Current balance"}
                             </p>
@@ -550,8 +547,9 @@ export default function Accounts() {
               <DialogHeader>
                 <DialogTitle>{editingAccount ? "Edit account" : "Add account"}</DialogTitle>
                 <DialogDescription>
-                  Enter the account details below. This demo stores changes in the current page
-                  state only.
+                  {editingAccount
+                    ? "Update the details for this account."
+                    : "Add an account to track its balance and transactions."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -603,9 +601,7 @@ export default function Accounts() {
 
                 <div className="space-y-2">
                   <Label htmlFor="account-balance">
-                    {type === "credit"
-                      ? "Outstanding balance (negative amount)"
-                      : "Current balance"}
+                    Opening balance
                   </Label>
                   <Input
                     id="account-balance"
@@ -613,12 +609,17 @@ export default function Accounts() {
                     step="0.01"
                     value={balance}
                     onChange={(event) => setBalance(event.target.value)}
-                    placeholder={type === "credit" ? "-3500" : "0.00"}
-                    required
+                    placeholder="0.00"
+                    required={!editingAccount}
+                    disabled={Boolean(editingAccount)}
                   />
-                  {type === "credit" && (
+                  {editingAccount ? (
                     <p className="text-xs text-muted-foreground">
-                      Example: enter -3500 for ₹3,500 owed.
+                      Balances change through completed transactions and cannot be edited here.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Opening balance initializes the account balance.
                     </p>
                   )}
                 </div>
@@ -655,7 +656,9 @@ export default function Accounts() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit">{editingAccount ? "Save changes" : "Create account"}</Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? "Saving..." : editingAccount ? "Save changes" : "Create account"}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -674,8 +677,8 @@ export default function Accounts() {
               <DialogDescription>
                 You are about to delete{" "}
                 <span className="font-medium text-foreground">{deleteTarget?.name}</span>. This
-                removes the account from this demo page. No real bank account or financial record
-                will be affected.
+                This action cannot be undone. Accounts with transactions and the default account
+                cannot be deleted; deactivate those accounts instead.
               </DialogDescription>
             </DialogHeader>
 
