@@ -2,11 +2,9 @@ import compression from "compression";
 import cors from "cors";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
-import pinoHttp from "pino-http";
 import { toNodeHandler } from "better-auth/node";
 
 import { env } from "./config/env.config.js";
-import { logger } from "./config/logger.config.js";
 import { connectToMongoDB } from "./config/db.config.js";
 import { auth } from "./lib/auth.lib.js";
 
@@ -61,11 +59,6 @@ app.use(
     legacyHeaders: false,
   }),
 );
-
-
-
-app.use(pinoHttp({ logger }));
-
 
 app.get("/", (_req, res) => {
   res.json({
