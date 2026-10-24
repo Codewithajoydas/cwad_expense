@@ -39,7 +39,10 @@ app.use(requestIdMiddleware);
 
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: [
+      "https://cwad-expense.codewithajoydas.in",
+      "http://localhost:5173",
+    ],
     credentials: true,
   }),
 );
