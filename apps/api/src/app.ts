@@ -1,8 +1,6 @@
 import compression from "compression";
 import cors from "cors";
 import express from "express";
-import { default as helmet } from "helmet";
-// 
 import { rateLimit } from "express-rate-limit";
 import pinoHttp from "pino-http";
 import { toNodeHandler } from "better-auth/node";
@@ -32,7 +30,6 @@ export async function createApp() {
   app.disable("x-powered-by");
 
   app.use(requestIdMiddleware);
-  app.use(helmet());
 
   app.use(
     cors({
