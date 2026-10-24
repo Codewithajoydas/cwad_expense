@@ -11,7 +11,7 @@ export function createAuth(db: Parameters<typeof mongodbAdapter>[0]) {
     baseURL:
       process.env.BETTER_AUTH_URL ?? "http://localhost:4000",
 
-    trustedOrigins: ["http://localhost:5173"],
+    trustedOrigins: ["https://cwad-expense.codewithajoydas.in"],
 
     emailAndPassword: {
       enabled: true,
