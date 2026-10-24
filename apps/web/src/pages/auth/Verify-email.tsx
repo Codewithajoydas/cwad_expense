@@ -119,7 +119,7 @@ export default function VerifyEmail() {
               </p>
             )}
 
-            <Button asChild className="mt-6 w-full">
+            <Button  className="mt-6 w-full">
               <Link to="/login">Continue to login</Link>
             </Button>
           </>
