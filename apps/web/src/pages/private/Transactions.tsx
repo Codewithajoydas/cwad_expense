@@ -11,9 +11,11 @@ import {
   Download,
   Ellipsis,
   Filter,
+  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
+  Trash2,
   Wallet,
   X,
 } from "lucide-react";
@@ -29,13 +31,30 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getAllTransactions, type Transaction as ApiTransaction } from "@/lib/api-client";
+import {
+  deleteTransaction,
+  getAccounts,
+  getAllTransactions,
+  getCategories,
+  updateTransaction,
+  type Account as ApiAccount,
+  type Category as ApiCategory,
+  type Transaction as ApiTransaction,
+} from "@/lib/api-client";
 
 type TransactionType = "income" | "expense" | "transfer";
 
@@ -49,6 +68,36 @@ type Transaction = {
   date: string;
   amount: number;
   type: TransactionType;
+  toAccountId: string;
+  status: ApiTransaction["status"];
+  paymentMethod: ApiTransaction["paymentMethod"];
+  notes: string;
+};
+
+type TransactionForm = {
+  title: string;
+  type: TransactionType;
+  amount: string;
+  categoryId: string;
+  accountId: string;
+  toAccountId: string;
+  date: string;
+  status: ApiTransaction["status"];
+  paymentMethod: ApiTransaction["paymentMethod"];
+  notes: string;
+};
+
+const emptyForm: TransactionForm = {
+  title: "",
+  type: "expense",
+  amount: "",
+  categoryId: "",
+  accountId: "",
+  toAccountId: "",
+  date: new Date().toLocaleDateString("en-CA"),
+  status: "completed",
+  paymentMethod: "other",
+  notes: "",
 };
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -98,16 +147,32 @@ export default function Transactions() {
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [availableAccounts, setAvailableAccounts] = useState<ApiAccount[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<ApiCategory[]>([]);
+  const [editing, setEditing] = useState<Transaction | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
+  const [form, setForm] = useState<TransactionForm>(emptyForm);
+  const [actionError, setActionError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const pageSize = 6;
 
   async function loadTransactions() {
     try {
       setLoadError("");
-      const records = await getAllTransactions();
+      const [records, userAccounts, userCategories] = await Promise.all([
+        getAllTransactions(),
+        getAccounts(),
+        getCategories(),
+      ]);
+      setAvailableAccounts(userAccounts);
+      setAvailableCategories(userCategories);
       setTransactions(records.map((record: ApiTransaction) => {
         const fromAccount = typeof record.account === "string" ? record.account : record.account.name;
-        const toAccount = typeof record.toAccount === "string" ? record.toAccount : record.toAccount?.name;
+        const toAccount =
+          typeof record.toAccount === "string"
+            ? record.toAccount
+            : record.toAccount?.name ?? "";
         const categoryName = typeof record.category === "string" ? record.category : record.category?.name ?? "";
         return {
           id: record._id,
@@ -119,6 +184,13 @@ export default function Transactions() {
           date: record.date.slice(0, 10),
           amount: record.amount,
           type: record.type,
+          toAccountId:
+            typeof record.toAccount === "string"
+              ? record.toAccount
+              : record.toAccount?._id ?? "",
+          status: record.status,
+          paymentMethod: record.paymentMethod,
+          notes: record.notes ?? "",
         };
       }));
     } catch (error) {
@@ -222,6 +294,89 @@ export default function Transactions() {
     setStartDate("");
     setEndDate("");
     setPage(1);
+  }
+
+  function openEditDialog(transaction: Transaction) {
+    setActionError("");
+    setEditing(transaction);
+    setForm({
+      title: transaction.title === "Transaction" ? "" : transaction.title,
+      type: transaction.type,
+      amount: String(transaction.amount),
+      categoryId: transaction.categoryId,
+      accountId: transaction.accountId,
+      toAccountId: transaction.toAccountId,
+      date: transaction.date,
+      status: transaction.status,
+      paymentMethod: transaction.paymentMethod,
+      notes: transaction.notes,
+    });
+  }
+
+  async function saveTransaction(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+
+    const amount = Number(form.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionError("Amount must be greater than zero.");
+      return;
+    }
+    if (!form.accountId) {
+      setActionError("Select an account.");
+      return;
+    }
+    if (form.type === "transfer") {
+      if (!form.toAccountId || form.toAccountId === form.accountId) {
+        setActionError("Choose a different destination account.");
+        return;
+      }
+    } else if (!form.categoryId) {
+      setActionError("Select a category.");
+      return;
+    }
+    if (!form.date) {
+      setActionError("Select a transaction date.");
+      return;
+    }
+
+    setIsSaving(true);
+    setActionError("");
+    try {
+      await updateTransaction(editing.id, {
+        type: form.type,
+        amount,
+        description: form.title.trim(),
+        account: form.accountId,
+        category: form.type === "transfer" ? null : form.categoryId,
+        toAccount: form.type === "transfer" ? form.toAccountId : null,
+        date: form.date,
+        status: form.status,
+        paymentMethod: form.paymentMethod,
+        notes: form.notes.trim(),
+      });
+      setEditing(null);
+      await loadTransactions();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to update transaction.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function removeTransaction() {
+    if (!deleteTarget) return;
+    setIsSaving(true);
+    setActionError("");
+    try {
+      await deleteTransaction(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadTransactions();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to delete transaction.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function exportCSV() {
@@ -522,15 +677,16 @@ export default function Transactions() {
                     <th className="px-4 py-4 font-medium">Account</th>
                     <th className="px-4 py-4 font-medium">Date</th>
                     <th className="px-4 py-4 font-medium">Type</th>
-                    <th className="px-6 py-4 text-right font-medium">
+                    <th className="px-4 py-4 text-right font-medium">
                       Amount
                     </th>
+                    <th className="px-6 py-4 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Loading transactions...</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Loading transactions...</td></tr>
                   ) : visibleTransactions.map((item) => {
                     const config = typeConfig[item.type];
                     const Icon = config.icon;
@@ -575,7 +731,7 @@ export default function Transactions() {
                           </Badge>
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-4 text-right font-semibold">
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-semibold">
                           <span
                             className={
                               item.type === "income"
@@ -590,6 +746,31 @@ export default function Transactions() {
                                 : ""}
                             {formatCurrency(item.amount)}
                           </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              aria-label={`Edit ${item.title}`}
+                              onClick={() => openEditDialog(item)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              aria-label={`Delete ${item.title}`}
+                              onClick={() => {
+                                setActionError("");
+                                setDeleteTarget(item);
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -665,6 +846,174 @@ export default function Transactions() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit transaction</DialogTitle>
+            <DialogDescription>Changes are saved to your account and balances are recalculated.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveTransaction} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="edit-transaction-title" className="text-sm font-medium">Title</label>
+              <Input
+                id="edit-transaction-title"
+                value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                maxLength={200}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-type" className="text-sm font-medium">Type</label>
+                <select
+                  id="edit-transaction-type"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={form.type}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      type: event.target.value as TransactionType,
+                      categoryId: "",
+                      toAccountId: "",
+                    })
+                  }
+                >
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                  <option value="transfer">Transfer</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-amount" className="text-sm font-medium">Amount</label>
+                <Input
+                  id="edit-transaction-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={form.amount}
+                  onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="edit-transaction-account" className="text-sm font-medium">
+                {form.type === "transfer" ? "From account" : "Account"}
+              </label>
+              <select
+                id="edit-transaction-account"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={form.accountId}
+                onChange={(event) => setForm({ ...form, accountId: event.target.value })}
+                required
+              >
+                <option value="" disabled>Select account</option>
+                {availableAccounts.map((item) => (
+                  <option key={item._id} value={item._id}>{item.name}</option>
+                ))}
+              </select>
+            </div>
+            {form.type === "transfer" ? (
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-to-account" className="text-sm font-medium">To account</label>
+                <select
+                  id="edit-transaction-to-account"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={form.toAccountId}
+                  onChange={(event) => setForm({ ...form, toAccountId: event.target.value })}
+                  required
+                >
+                  <option value="" disabled>Select destination</option>
+                  {availableAccounts.map((item) => (
+                    <option key={item._id} value={item._id} disabled={item._id === form.accountId}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-category" className="text-sm font-medium">Category</label>
+                <select
+                  id="edit-transaction-category"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={form.categoryId}
+                  onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
+                  required
+                >
+                  <option value="" disabled>Select category</option>
+                  {availableCategories
+                    .filter((item) => item.type === form.type)
+                    .map((item) => (
+                      <option key={item._id} value={item._id}>{item.name}</option>
+                    ))}
+                </select>
+              </div>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-date" className="text-sm font-medium">Date</label>
+                <Input
+                  id="edit-transaction-date"
+                  type="date"
+                  value={form.date}
+                  onChange={(event) => setForm({ ...form, date: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="edit-transaction-status" className="text-sm font-medium">Status</label>
+                <select
+                  id="edit-transaction-status"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={form.status}
+                  onChange={(event) =>
+                    setForm({ ...form, status: event.target.value as ApiTransaction["status"] })
+                  }
+                >
+                  <option value="completed">Completed</option>
+                  <option value="pending">Pending</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="edit-transaction-notes" className="text-sm font-medium">Notes</label>
+              <Input
+                id="edit-transaction-notes"
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                maxLength={2000}
+              />
+            </div>
+            {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save changes"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete transaction?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete “{deleteTarget?.title}” and reverse its account balance changes.
+            </DialogDescription>
+          </DialogHeader>
+          {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button type="button" variant="destructive" onClick={removeTransaction} disabled={isSaving}>
+              <Trash2 className="mr-2 size-4" />
+              {isSaving ? "Deleting..." : "Delete transaction"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

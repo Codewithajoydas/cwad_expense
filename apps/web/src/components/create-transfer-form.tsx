@@ -24,7 +24,11 @@ import {
 import { createTransaction } from "@/lib/api-client";
 import { useFinanceOptions } from "@/lib/use-finance-options";
 
-export default function CreateTransferForm() {
+export default function CreateTransferForm({
+  onCreated,
+}: {
+  onCreated?: () => void;
+}) {
   const { accounts, isLoading: isLoadingOptions, error: optionsError } = useFinanceOptions();
   const [amount, setAmount] = useState("");
   const [fromAccount, setFromAccount] = useState("");
@@ -72,6 +76,7 @@ export default function CreateTransferForm() {
         status: "completed",
       });
       setSuccess("Transfer recorded successfully.");
+      onCreated?.();
       setAmount("");
       setFromAccount("");
       setToAccount("");

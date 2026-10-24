@@ -307,6 +307,32 @@ export async function createTransaction(body: {
   return result.data;
 }
 
+export async function updateTransaction(
+  id: string,
+  body: Partial<{
+    type: TransactionType;
+    amount: number;
+    description: string;
+    category: string | null;
+    account: string;
+    toAccount: string | null;
+    date: string;
+    paymentMethod: Transaction["paymentMethod"];
+    status: Transaction["status"];
+    notes: string;
+  }>,
+) {
+  const result = await request<ApiResponse<Transaction>>(
+    `/api/transactions/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: jsonBody(body),
+    },
+  );
+  if (!result.data) throw new Error("The API did not return the updated transaction.");
+  return result.data;
+}
+
 export async function deleteTransaction(id: string) {
   return request<ApiResponse<Transaction>>(
     `/api/transactions/${encodeURIComponent(id)}`,

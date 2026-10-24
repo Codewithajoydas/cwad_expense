@@ -44,7 +44,7 @@ import ResetPassword from "./pages/auth/Reset-password";
 import LandingPage from "./pages/public/LandingPage";
 import PrivacyPolicy from "./pages/public/PrivacyPolicy";
 import TermsAndConditions from "./pages/public/TermsAndConditions";
-
+import SessionSkeleton from "../src/components/layout/SessionSkeleton"
 // Private layout and authentication guard
 function PrivateLayout() {
   const {
@@ -62,11 +62,7 @@ function PrivateLayout() {
   // Wait for the session check to finish.
   if (isPending) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30">
-        <p className="text-sm text-muted-foreground">
-          Checking your session...
-        </p>
-      </div>
+     <SessionSkeleton/>
     );
   }
 

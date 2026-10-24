@@ -37,6 +37,199 @@ const isValidId = (id: string) =>
 
 const validTypes: CategoryType[] = ["income", "expense"];
 
+type DefaultCategory = {
+  name: string;
+  type: CategoryType;
+  description: string;
+  icon: string;
+  sortOrder: number;
+};
+
+const defaultCategories: DefaultCategory[] = [
+  {
+    name: "Food & Dining",
+    type: "expense",
+    description: "Meals, restaurants and food purchases",
+    icon: "food",
+    sortOrder: 10,
+  },
+  {
+    name: "Groceries",
+    type: "expense",
+    description: "Groceries and household essentials",
+    icon: "groceries",
+    sortOrder: 20,
+  },
+  {
+    name: "Transportation",
+    type: "expense",
+    description: "Travel, fuel and commuting",
+    icon: "transport",
+    sortOrder: 30,
+  },
+  {
+    name: "Shopping",
+    type: "expense",
+    description: "Clothing and personal purchases",
+    icon: "shopping",
+    sortOrder: 40,
+  },
+  {
+    name: "Housing",
+    type: "expense",
+    description: "Rent and household expenses",
+    icon: "housing",
+    sortOrder: 50,
+  },
+  {
+    name: "Bills & Utilities",
+    type: "expense",
+    description: "Electricity, internet and utility bills",
+    icon: "utilities",
+    sortOrder: 60,
+  },
+  {
+    name: "Healthcare",
+    type: "expense",
+    description: "Medical and health expenses",
+    icon: "health",
+    sortOrder: 70,
+  },
+  {
+    name: "Education",
+    type: "expense",
+    description: "Courses, books and learning",
+    icon: "education",
+    sortOrder: 80,
+  },
+  {
+    name: "Entertainment",
+    type: "expense",
+    description: "Movies and recreation",
+    icon: "entertainment",
+    sortOrder: 90,
+  },
+  {
+    name: "Other",
+    type: "expense",
+    description: "Miscellaneous spending",
+    icon: "other",
+    sortOrder: 100,
+  },
+  {
+    name: "Salary",
+    type: "income",
+    description: "Employment income",
+    icon: "salary",
+    sortOrder: 10,
+  },
+  {
+    name: "Freelancing",
+    type: "income",
+    description: "Freelance and contract work",
+    icon: "freelance",
+    sortOrder: 20,
+  },
+  {
+    name: "Business",
+    type: "income",
+    description: "Business earnings",
+    icon: "business",
+    sortOrder: 30,
+  },
+  {
+    name: "Investments",
+    type: "income",
+    description: "Investment returns and dividends",
+    icon: "investment",
+    sortOrder: 40,
+  },
+  {
+    name: "Rental Income",
+    type: "income",
+    description: "Property rental earnings",
+    icon: "rental",
+    sortOrder: 50,
+  },
+  {
+    name: "Interest",
+    type: "income",
+    description: "Interest income",
+    icon: "interest",
+    sortOrder: 60,
+  },
+  {
+    name: "Gifts",
+    type: "income",
+    description: "Money received as gifts",
+    icon: "gift",
+    sortOrder: 70,
+  },
+  {
+    name: "Refunds",
+    type: "income",
+    description: "Refunds and returned payments",
+    icon: "refund",
+    sortOrder: 80,
+  },
+  {
+    name: "Other Income",
+    type: "income",
+    description: "Other money received",
+    icon: "other",
+    sortOrder: 90,
+  },
+];
+
+function isDuplicateKeyError(error: unknown): error is { code: number } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === 11000
+  );
+}
+
+async function ensureDefaultCategories(userId: string): Promise<void> {
+  try {
+    await Category.bulkWrite(
+      defaultCategories.map((category) => ({
+        updateOne: {
+          filter: {
+            userId,
+            name: category.name,
+            type: category.type,
+          },
+          update: {
+            $setOnInsert: {
+              userId,
+              ...category,
+              isDefault: true,
+              isActive: true,
+              color: "#64748b",
+              parentCategory: null,
+            },
+          },
+          upsert: true,
+        },
+      })),
+      { ordered: false },
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+
+    const existingDefaultCount = await Category.countDocuments({
+      userId,
+      $or: defaultCategories.map(({ name, type }) => ({ name, type })),
+    });
+
+    if (existingDefaultCount !== defaultCategories.length) {
+      throw error;
+    }
+  }
+}
 
 
 
@@ -71,6 +264,8 @@ export const getCategoriesService = async (
 
     query.isActive = filters.isActive === "true";
   }
+
+  await ensureDefaultCategories(userId);
 
   return Category.find(query)
     .sort({ sortOrder: 1, name: 1 })

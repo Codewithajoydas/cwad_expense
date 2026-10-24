@@ -100,6 +100,12 @@ Base path: `/api/categories`
 
 `GET` accepts optional `type` (`income` or `expense`) and `isActive` (`true` or `false`) query parameters.
 
+The API ensures a standard set of active, user-owned income and expense categories exists whenever the signed-in user lists categories. This makes the built-in options available to new users before they create any categories. Seeding is idempotent and does not overwrite existing categories or reactivate categories the user has deactivated. The defaults are protected from editing and deletion; users can create and manage additional categories.
+
+Default expense categories: `Food & Dining`, `Groceries`, `Transportation`, `Shopping`, `Housing`, `Bills & Utilities`, `Healthcare`, `Education`, `Entertainment`, and `Other`.
+
+Default income categories: `Salary`, `Freelancing`, `Business`, `Investments`, `Rental Income`, `Interest`, `Gifts`, `Refunds`, and `Other Income`.
+
 Create body example:
 
 ```json
@@ -156,7 +162,24 @@ Create body example:
 
 `type`, positive `amount`, and an active `account` belonging to the signed-in user are required. `category` must be an active category of the same type as an income or expense transaction; transfers cannot have a category. Transfers require a distinct destination account in `toAccount`. Optional fields include `description`, `date`, `paymentMethod` (`cash`, `card`, `bank_transfer`, `upi`, `wallet`, `other`), `status`, `notes`, `tags`, `isRecurring`, `recurringTransaction`, and `receiptUrl`.
 
-Completed transactions update account balances. Pending and cancelled transactions do not. Create, update, and delete responses contain `success`, `message`, and `data`. List responses contain `success`, `message`, `transactions`, and `pagination` (`total`, `page`, `limit`, and `totalPages`); account, destination account, and category details are populated in each result.
+Completed transactions update account balances. Pending and cancelled transactions do not.
+
+`PATCH /api/transactions/:id` accepts any supported transaction fields from the create payload. Omitted fields remain unchanged; the complete resulting transaction is validated before it is saved. For example:
+
+```http
+PATCH /api/transactions/66f000000000000000000003
+Content-Type: application/json
+```
+
+```json
+{
+  "amount": 48.5,
+  "description": "Lunch with colleagues",
+  "date": "2026-10-24"
+}
+```
+
+`DELETE /api/transactions/:id` permanently removes the signed-in user's transaction. For a completed transaction, its effect is reversed on the source account and, for a transfer, the destination account. Both operations validate ownership; a transaction belonging to another user cannot be changed or removed. Create, update, and delete responses contain `success`, `message`, and `data`. List responses contain `success`, `message`, `transactions`, and `pagination` (`total`, `page`, `limit`, and `totalPages`); account, destination account, and category details are populated in each result.
 
 ## Other user data
 
@@ -169,7 +192,7 @@ The following authenticated endpoints provide persistent, user-scoped records fo
 | `PATCH` | `/api/data/:resource/:id` | Update a record |
 | `DELETE` | `/api/data/:resource/:id` | Delete a record |
 
-Supported `resource` values are `budgets`, `goals`, `debts`, `recurring`, `notifications`, and `preferences`. All responses are JSON. List responses have `{ "success": true, "count": 0, "data": [] }`; create and update responses return the saved record in `data`, and delete responses return the deleted record's ID. Unknown resources return `404`; invalid bodies and IDs return `400`; records that do not exist or do not belong to the signed-in user return `404`.
+Supported `resource` values are `budgets`, `goals`, `debts`, `recurring`, `notifications`, and `preferences`. All responses are JSON. List responses have `{ "success": true, "count": 0, "data": [] }`; create and update responses return the saved record in `data`, and delete responses return the deleted record's ID. `PATCH` accepts partial record data, merges it into the saved record, and validates the result. `DELETE` permanently removes the selected record. Unknown resources return `404`; invalid bodies and IDs return `400`; records that do not exist or do not belong to the signed-in user return `404`.
 
 Each request body must be a JSON object containing only fields supported for that resource. `PATCH` merges the submitted fields into the existing record and validates the complete result. Record IDs are MongoDB ObjectId strings.
 
