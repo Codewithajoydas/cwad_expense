@@ -204,7 +204,7 @@ export default function CreateExpenseForm() {
         <div className="space-y-2">
           <Label htmlFor="expense-account">Paid from</Label>
 
-          {/*  @ts-ignore */}
+          {/* @ts-expect-error Base UI Select permits a value callback that the wrapper types do not expose. */}
           <Select value={account} onValueChange={setAccount} required>
             <SelectTrigger id="expense-account" className="h-11 w-full">
               <SelectValue placeholder="Select account" />

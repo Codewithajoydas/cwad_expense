@@ -134,7 +134,7 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${env.VITE_API_URL}${path}`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {

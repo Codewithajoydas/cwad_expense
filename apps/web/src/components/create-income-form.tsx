@@ -192,7 +192,7 @@ export default function CreateIncomeForm() {
         <div className="space-y-2">
           <Label htmlFor="income-account">Deposit to</Label>
 
-          {/* @ts-ignore */}
+          {/* @ts-expect-error Base UI Select permits a value callback that the wrapper types do not expose. */}
           <Select value={account} onValueChange={setAccount} required>
             <SelectTrigger id="income-account" className="h-11 w-full">
               <SelectValue placeholder="Select account" />

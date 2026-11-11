@@ -1,5 +1,6 @@
 
-import { NavLink } from "react-router";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Receipt,
@@ -37,7 +38,7 @@ const navigationGroups = [
     links: [
       {
         title: "Dashboard",
-        url: "/",
+        url: "/dashboard",
         icon: LayoutDashboard,
       },
     ],
@@ -119,7 +120,7 @@ const navigationGroups = [
   },
 ];
 
-const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+const navLinkClass = (isActive: boolean) =>
   [
     "group flex h-9 w-full items-center gap-3 rounded-md px-3",
     "text-[13px] transition-colors duration-150",
@@ -133,6 +134,8 @@ export default function Sidebar({
   isOpen,
   onToggle,
 }: SidebarProps) {
+  const pathname = usePathname();
+
   return (
     <>
       {/* Sidebar */}
@@ -143,12 +146,12 @@ export default function Sidebar({
       >
         {/* Brand */}
         <div className="flex h-16 shrink-0 items-center px-3">
-          <NavLink
-            to="/dashboard"
+          <Link
+            href="/dashboard"
             className="flex items-center gap-3 rounded-md"
           >
             <img
-              src={logo}
+              src={logo.src}
               alt="CWAD Expense"
               className="size-9 shrink-0 object-contain"
             />
@@ -162,7 +165,7 @@ export default function Sidebar({
                 Personal finance
               </p>
             </div>
-          </NavLink>
+          </Link>
         </div>
 
         <Separator />
@@ -180,11 +183,10 @@ export default function Sidebar({
 
               <div className="space-y-1">
                 {group.links.map(({ title, url, icon: Icon }) => (
-                  <NavLink
+                  <Link
                     key={url}
-                    to={url}
-                    end
-                    className={navLinkClass}
+                    href={url}
+                    className={navLinkClass(pathname === url)}
                   >
                     <Icon className="size-[17px] shrink-0 opacity-85" />
 
@@ -193,7 +195,7 @@ export default function Sidebar({
                     </span>
 
                     <ChevronRight className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
-                  </NavLink>
+                  </Link>
                 ))}
               </div>
             </section>
@@ -202,23 +204,21 @@ export default function Sidebar({
 
         {/* Footer */}
         <div className="shrink-0 space-y-1 border-t px-3 py-3">
-          <NavLink
-            to="/notifications"
-            end
-            className={navLinkClass}
+          <Link
+            href="/notifications"
+            className={navLinkClass(pathname === "/notifications")}
           >
             <Bell className="size-[17px] shrink-0 opacity-85" />
             <span className="min-w-0 flex-1">Notifications</span>
-          </NavLink>
+          </Link>
 
-          <NavLink
-            to="/settings"
-            end
-            className={navLinkClass}
+          <Link
+            href="/settings"
+            className={navLinkClass(pathname === "/settings")}
           >
             <Settings className="size-[17px] shrink-0 opacity-85" />
             <span className="min-w-0 flex-1">Settings</span>
-          </NavLink>
+          </Link>
         </div>
       </aside>
 

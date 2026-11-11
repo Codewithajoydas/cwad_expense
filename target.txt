@@ -1,0 +1,53 @@
+===================================
+=======PRIMARY THINGS TO ADD=======
+===================================
+1. What is my target?
+Convert the whole react project to NextJS [done]
+Add seo tags []
+Make search function workable
+Add Theme for dark mode
+Add Notification system
+Manage Settings
+	Like Appearance
+	Change Password Etc.
+Add 2FA feature
+
+===================================
+=============SECONDARY=============
+===================================
+Make mobile application
+Upload to google app store
+
+
+
+======= SUPPORTING TEXT=======
+create these pages in NextJS
+📦pages
+ ┣ 📂auth
+ ┃ ┣ 📜Forgot-password.tsx
+ ┃ ┣ 📜Login.tsx
+ ┃ ┣ 📜Reset-password.tsx
+ ┃ ┣ 📜Signup.tsx
+ ┃ ┣ 📜Verify-email.tsx
+ ┃ ┗ 📜Verify-otp.tsx
+ ┣ 📂private
+ ┃ ┣ 📜Accounts.tsx
+ ┃ ┣ 📜Budgets.tsx
+ ┃ ┣ 📜Calendar.tsx
+ ┃ ┣ 📜Categories.tsx
+ ┃ ┣ 📜Create-expense.tsx
+ ┃ ┣ 📜Dashboard.tsx
+ ┃ ┣ 📜Debts.tsx
+ ┃ ┣ 📜Goals.tsx
+ ┃ ┣ 📜Income.tsx
+ ┃ ┣ 📜Notifications.tsx
+ ┃ ┣ 📜Recurring.tsx
+ ┃ ┣ 📜Reports.tsx
+ ┃ ┣ 📜Settings.tsx
+ ┃ ┣ 📜Transactions.tsx
+ ┃ ┗ 📜Transfers.tsx
+ ┗ 📂public
+ ┃ ┣ 📜LandingPage.tsx
+ ┃ ┣ 📜PrivacyPolicy.tsx
+ ┃ ┗ 📜TermsAndConditions.tsx
+======= SUPPORTING TEXT=======
