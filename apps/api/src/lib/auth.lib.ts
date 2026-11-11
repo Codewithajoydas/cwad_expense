@@ -1,4 +1,3 @@
-
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
 import { sendEmail } from "./send-email.lib.js";
@@ -8,10 +7,9 @@ export function createAuth(db: Parameters<typeof mongodbAdapter>[0]) {
   return betterAuth({
     database: mongodbAdapter(db),
 
-    baseURL:
-      process.env.BETTER_AUTH_URL ?? "http://localhost:4000",
+    baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:4000",
 
-    trustedOrigins: ["https://cwad-expense.codewithajoydas.in"],
+    trustedOrigins: ["https://cwad-expense.codewithajoydas.in", "http://localhost:3000"],
 
     emailAndPassword: {
       enabled: true,
@@ -44,6 +42,5 @@ export function createAuth(db: Parameters<typeof mongodbAdapter>[0]) {
   });
 }
 
-
-const {db} = await connectToMongoDB();
+const { db } = await connectToMongoDB();
 export const auth = createAuth(db);

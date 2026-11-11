@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Search,
   Bell,
@@ -50,8 +51,8 @@ type HeaderProps = {
 };
 
 export default function Header({ onMenuClick }: HeaderProps) {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const pathname = usePathname();
+  const router = useRouter();
 
   const [search, setSearch] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -62,7 +63,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   const user = session?.user;
 
-  const pageTitle = pageTitles[location.pathname] ?? "CWAD Expense";
+  const pageTitle = pageTitles[pathname] ?? "CWAD Expense";
 
   const userName = user?.name?.trim() || "My Account";
   const userEmail = user?.email || "";
@@ -101,7 +102,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         return;
       }
 
-      navigate("/login", { replace: true });
+      router.replace("/login");
     } catch (error) {
       setLogoutError(
         error instanceof Error ? error.message : "Something went wrong while signing out.",
@@ -157,7 +158,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
           {/* Notifications */}
           <Button type="button" variant="ghost" size="icon" aria-label="Notifications">
-            <Link to="/notifications">
+            <Link href="/notifications">
               <Bell className="size-[18px]" />
             </Link>
           </Button>
@@ -221,12 +222,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
                 <DropdownMenuSeparator />
 
-                <DropdownMenuItem render={<Link to="/settings" />}>
+                <DropdownMenuItem render={<Link href="/settings" />}>
                   <UserRound className="mr-2 size-4" />
                   Profile
                 </DropdownMenuItem>
 
-                <DropdownMenuItem render={<Link to="/settings" />}>
+                <DropdownMenuItem render={<Link href="/settings" />}>
                   <Settings className="mr-2 size-4" />
                   Settings
                 </DropdownMenuItem>
